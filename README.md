@@ -3,6 +3,13 @@
 Mitglieder, Beiträge, Kontoauszüge, Belege und Gewinn- und Verlustrechnung – **komplett lokal im Browser**.
 Keine Cloud, kein Server, kein Konto. Alle Daten liegen in einer SQLite-Datei, die du jederzeit herunterladen und wieder öffnen kannst.
 
+## Demo-Video (3:44 min)
+
+[![Demo-Video: Starte mit dem Kontoauszug](docs/demo/vorschau.jpg)](docs/demo/Vereinsverwaltung-Demo.mp4)
+
+Ein Kassenwart richtet seinen Verein an einem Sonntagabend ein – angefangen beim Kontoauszug (CSV), ohne vorher eine einzige Mitgliederliste abzutippen.
+Alle Namen und Zahlen im Video sind erfunden. Musik: „Wingspan“ von Blue Dot Sessions (CC BY 3.0), Stimmen: ElevenLabs – siehe [docs/demo/CREDITS.md](docs/demo/CREDITS.md).
+
 ## Funktionen
 
 **Übersicht und Vorstandsbericht**
