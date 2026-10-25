@@ -3,13 +3,15 @@ import { all, get, run, scalar, tx } from '../db/db';
 import type { Account, Allocation, BalanceCheckpoint, Category, Member, Partner, Transaction } from '../db/schema';
 import { navigate, useLocalState, useQuery } from '../hooks';
 import {
-  autoAssign, balanceAt, createRuleFromTransaction, setAllocations, txStatus, type AllocationInput, type TxStatus,
+  autoAssign, balanceAt, calibrateOpening, createRuleFromTransaction, isCalibrated, setAllocations, storedEndBalance, txStatus,
+  type AllocationInput, type TxStatus,
 } from '../lib/bank';
 import { formatDate, formatEUR, formatIBAN, normalizeIBAN, todayISO, yearOf } from '../lib/format';
 import { categories, categoryLabel, categoryOptions, memberName, memberOptions, partnerOptions } from '../lib/lookups';
 import { TransactionDocs } from '../components/Docs';
 import { QuickMemberDialog, QuickPartnerDialog } from '../components/QuickCreate';
 import { SetupByPayer } from './Setup';
+import { CalibrateDialog } from '../components/Calibrate';
 import { bulkClear, bulkSetCategory, bulkSetChecked, bulkSetPartner, similarWithoutPartner } from '../lib/bulk';
 import {
   attempt, Badge, Checkbox, DateInput, Empty, Field, Modal, MoneyInput, PageHeader, Select, Stat, Tabs, TextArea, TextInput, toast, YearSelect,
@@ -483,11 +485,10 @@ function Accounts() {
   const data = useQuery(() => {
     const accounts = all<Account>('SELECT * FROM accounts ORDER BY id');
     return accounts.map((a) => {
-      const last = get<{ buchungsdatum: string; saldo_cent: number | null }>(
-        'SELECT buchungsdatum, saldo_cent FROM transactions WHERE account_id = ? ORDER BY buchungsdatum DESC, id DESC LIMIT 1', [a.id]);
+      const stored = storedEndBalance(a.id);
       const checkpoints = all<BalanceCheckpoint>('SELECT * FROM balance_checkpoints WHERE account_id = ? ORDER BY datum DESC', [a.id]);
       const n = scalar<number>('SELECT COUNT(*) FROM transactions WHERE account_id = ?', [a.id]) ?? 0;
-      return { a, saldo: balanceAt(a, todayISO()), last, checkpoints, n };
+      return { a, saldo: balanceAt(a, todayISO()), stored, checkpoints, n, calibrated: isCalibrated(a) };
     });
   });
   return (
@@ -497,7 +498,7 @@ function Accounts() {
         <span className="muted small">Konten werden beim ersten Import auch automatisch angelegt (anhand der IBAN in der CSV-Datei).</span>
       </div>
       {!data.length && <Empty>Noch kein Konto vorhanden.</Empty>}
-      {data.map(({ a, saldo, last, checkpoints, n }) => (
+      {data.map(({ a, saldo, stored, checkpoints, n, calibrated }) => (
         <div className="card" key={a.id}>
           <div className="card-head">
             <div>
@@ -505,17 +506,31 @@ function Accounts() {
               <div className="muted small">{a.bank} {a.iban && <span className="mono">{formatIBAN(a.iban)}</span>} · {n} Buchungen</div>
             </div>
             <div className="actions">
-              <button onClick={() => setCp({ account: a })}>Kontostand laut Auszug erfassen</button>
+              <button className={calibrated ? '' : 'primary'} onClick={() => setCp({ account: a })}>Kontostand abgleichen</button>
               <button onClick={() => setEdit(a)}>Bearbeiten</button>
             </div>
           </div>
+          {!calibrated && (
+            <div className="callout warn">
+              <strong>Kontostand noch nicht abgeglichen.</strong> Der angezeigte Kontostand ist bisher nur die Summe der importierten Buchungen
+              (Anfangssaldo 0 €). Trage einmal den Kontostand laut Online-Banking ein – der Anfangssaldo wird daraus zurückgerechnet.
+              <div className="actions mt">
+                <button className="primary" onClick={() => setCp({ account: a })}>Kontostand eingeben</button>
+                {stored && (
+                  <button onClick={() => attempt(() => calibrateOpening(a.id, stored.datum, stored.saldo_cent, 'aus Importdaten'), 'Kontostand aus den Importdaten übernommen')}>
+                    Aus Importdaten übernehmen ({formatEUR(stored.saldo_cent)} am {formatDate(stored.datum)})
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           <div className="stats">
             <Stat label={`Anfangssaldo ${formatDate(a.anfangsdatum)}`} value={formatEUR(a.anfangssaldo_cent)} sub="Kontostand zu Beginn dieses Tages" />
-            <Stat label="Berechneter Kontostand heute" value={formatEUR(saldo)} />
-            {last?.saldo_cent != null && (
-              <Stat label={`Saldo laut Bank (${formatDate(last.buchungsdatum)})`} value={formatEUR(last.saldo_cent)}
-                tone={balanceAt(a, last.buchungsdatum) === last.saldo_cent ? 'ok' : 'bad'}
-                sub={balanceAt(a, last.buchungsdatum) === last.saldo_cent ? 'stimmt überein' : `Differenz ${formatEUR((balanceAt(a, last.buchungsdatum) ?? 0) - last.saldo_cent)}`} />
+            <Stat label="Berechneter Kontostand heute" value={formatEUR(saldo)} tone={calibrated ? undefined : 'warn'} sub={calibrated ? undefined : 'nicht abgeglichen'} />
+            {stored && (
+              <Stat label={`Saldo laut Bankdatei (${formatDate(stored.datum)})`} value={formatEUR(stored.saldo_cent)}
+                tone={balanceAt(a, stored.datum) === stored.saldo_cent ? 'ok' : 'bad'}
+                sub={balanceAt(a, stored.datum) === stored.saldo_cent ? 'stimmt überein' : `Differenz ${formatEUR((balanceAt(a, stored.datum) ?? 0) - stored.saldo_cent)}`} />
             )}
           </div>
           {checkpoints.length > 0 && (
@@ -542,7 +557,7 @@ function Accounts() {
         </div>
       ))}
       {edit && <AccountDialog a={edit} onClose={() => setEdit(null)} />}
-      {cp && <CheckpointDialog account={cp.account} onClose={() => setCp(null)} />}
+      {cp && <CalibrateDialog account={cp.account} onClose={() => setCp(null)} />}
     </>
   );
 }
@@ -571,32 +586,6 @@ function AccountDialog({ a, onClose }: { a: Partial<Account>; onClose: () => voi
         <Field label="IBAN" span={2}><TextInput value={v.iban} onChange={(x) => setV({ ...v, iban: x })} /></Field>
         <Field label="Anfangsdatum" hint="ab hier werden Kontostände berechnet"><DateInput value={v.anfangsdatum} onChange={(x) => setV({ ...v, anfangsdatum: x ?? undefined })} /></Field>
         <Field label="Anfangssaldo" hint="Kontostand zu Beginn des Anfangsdatums (z. B. Stand 1.1. laut Auszug)"><MoneyInput value={v.anfangssaldo_cent} onChange={(x) => setV({ ...v, anfangssaldo_cent: x ?? 0 })} /></Field>
-      </div>
-    </Modal>
-  );
-}
-
-export function CheckpointDialog({ account, onClose, datum: initialDate }: { account: Account; onClose: () => void; datum?: string }) {
-  const [datum, setDatum] = useState<string | null>(initialDate ?? `${new Date().getFullYear() - 1}-12-31`);
-  const [saldo, setSaldo] = useState<number | null>(null);
-  const [notiz, setNotiz] = useState('');
-  const save = () =>
-    attempt(() => {
-      run(
-        `INSERT INTO balance_checkpoints(account_id, datum, saldo_cent, notiz) VALUES (?,?,?,?)
-         ON CONFLICT(account_id, datum) DO UPDATE SET saldo_cent = excluded.saldo_cent, notiz = excluded.notiz`,
-        [account.id, datum!, saldo!, notiz || null],
-      );
-      onClose();
-    }, 'Kontostand erfasst');
-  return (
-    <Modal title={`Kontostand laut Auszug – ${account.name}`} onClose={onClose}
-      footer={<><button onClick={onClose}>Abbrechen</button><button className="primary" disabled={!datum || saldo == null} onClick={save}>Speichern</button></>}>
-      <p className="muted small">Trage z. B. den Kontostand zum 31.12. laut Jahreskontoauszug ein. Die App vergleicht ihn mit dem berechneten Stand – so fallen fehlende Importe sofort auf.</p>
-      <div className="form-grid cols-2">
-        <Field label="Stichtag (Ende des Tages)"><DateInput value={datum} onChange={setDatum} /></Field>
-        <Field label="Kontostand"><MoneyInput value={saldo} onChange={setSaldo} autoFocus /></Field>
-        <Field label="Notiz" span={2}><TextInput value={notiz} onChange={setNotiz} placeholder="z. B. Kontoauszug Nr. 12/2026" /></Field>
       </div>
     </Modal>
   );

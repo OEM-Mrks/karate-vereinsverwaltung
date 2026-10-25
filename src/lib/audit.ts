@@ -3,6 +3,7 @@
 import { all, get, run, scalar, tx } from '../db/db';
 import type { Audit, AuditCheck, Transaction } from '../db/schema';
 import { buildReport, type Report } from './report';
+import { isCalibrated } from './bank';
 
 export type AuditItem = Transaction & {
   zuordnung: { kat: string | null; nummer: string | null; name: string | null; betrag_cent: number; beleg_pflicht: number }[];
@@ -89,7 +90,9 @@ export function auditSummary(audit: Audit, items: AuditItem[]): AuditSummary {
   const ohneBeleg = items.filter((i) => i.zuordnung.some((z) => z.beleg_pflicht) && !i.belege.length).length;
   const hinweise: { ok: boolean; text: string }[] = [];
   for (const k of report.konten) {
-    if (k.laut_auszug) {
+    if (!isCalibrated(k.account)) {
+      hinweise.push({ ok: false, text: `${k.account.name}: Kontostand nicht abgeglichen – Anfangssaldo fehlt, Kontostände sind nur Summen der Buchungen` });
+    } else if (k.laut_auszug) {
       const diff = (k.ende ?? 0) - k.laut_auszug.saldo_cent;
       hinweise.push({ ok: diff === 0, text: `${k.account.name}: Kontostand 31.12. laut Auszug ${diff === 0 ? 'stimmt mit den Buchungen überein' : `weicht um ${(diff / 100).toFixed(2).replace('.', ',')} € ab`}` });
     } else {

@@ -6,7 +6,8 @@ import { useLocalState, useQuery } from '../hooks';
 import { formatDate, formatEUR, todayISO, toISO } from '../lib/format';
 import { buildReport, reportToCSV, shiftYear, type ReportLine } from '../lib/report';
 import { Badge, DateInput, PageHeader, YearSelect } from '../components/ui';
-import { CheckpointDialog } from './Bank';
+import { CalibrateDialog } from '../components/Calibrate';
+import { isCalibrated } from '../lib/bank';
 
 type Period = 'jahr' | 'bisHeute' | 'q1' | 'q2' | 'q3' | 'q4' | 'h1' | 'h2' | 'monat' | 'frei';
 
@@ -43,6 +44,7 @@ export function ReportPage() {
   const r = useQuery(() => buildReport(year, range.von, range.bis), [year, range.von, range.bis]);
   const zeitraum = r.ganzesJahr ? String(year) : `${formatDate(r.von)} – ${formatDate(r.bis)}`;
   const fehlendAuszug = r.konten.filter((k) => !k.laut_auszug);
+  const unabgeglichen = r.konten.filter((k) => !isCalibrated(k.account));
   const abweichung = r.konten.filter((k) => k.laut_auszug && k.ende != null && k.ende !== k.laut_auszug.saldo_cent);
   const verein = useQuery(() => getSetting('verein_name'));
 
@@ -101,7 +103,14 @@ export function ReportPage() {
           Es zählen nur bereits importierte Kontobewegungen – Beiträge, die noch nicht eingegangen sind, fehlen naturgemäß.
         </div>
       )}
-      {r.konten.length > 0 && (
+      {unabgeglichen.length > 0 && (
+        <div className="callout bad no-print">
+          <strong>Kontostand nicht abgeglichen:</strong> Für {unabgeglichen.map((k) => k.account.name).join(', ')} ist noch kein Kontostand laut Bank hinterlegt.
+          Die Kontostände unten sind deshalb nur die Summe der Buchungen.{' '}
+          {unabgeglichen.map((k) => <button key={k.account.id} className="link" onClick={() => setCheckpointFor(k.account)}>Jetzt für „{k.account.name}" abgleichen</button>)}
+        </div>
+      )}
+      {r.konten.length > 0 && unabgeglichen.length === 0 && (
         <div className={`callout no-print ${abweichung.length ? 'bad' : fehlendAuszug.length ? '' : 'ok'}`}>
           <strong>Kontoabstimmung zum {formatDate(r.bis)}: </strong>
           {abweichung.length
@@ -211,7 +220,7 @@ export function ReportPage() {
           Trage den Kontostand laut Jahreskontoauszug ein, um fehlende oder doppelte Importe zu erkennen.
         </p>
       </div>
-      {checkpointFor && <CheckpointDialog account={checkpointFor} datum={r.bis} onClose={() => setCheckpointFor(null)} />}
+      {checkpointFor && <CalibrateDialog account={checkpointFor} datum={r.bis} onClose={() => setCheckpointFor(null)} />}
       <div className="print-only signature">
         <div>Ort, Datum</div><div>Kassenwart/in</div><div>Kassenprüfer/in</div>
       </div>

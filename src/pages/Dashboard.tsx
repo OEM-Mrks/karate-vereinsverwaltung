@@ -2,7 +2,7 @@ import { all, getSetting, scalar } from '../db/db';
 import type { Account, Member } from '../db/schema';
 import { GRADES } from '../db/seed';
 import { navigate, useQuery } from '../hooks';
-import { balanceAt } from '../lib/bank';
+import { balanceAt, isCalibrated } from '../lib/bank';
 import { balanceBefore, isActive, loadFeeContext, yearSummary } from '../lib/fees';
 import { earliestExitDate, formatDate, formatEUR, todayISO } from '../lib/format';
 import { buildReport } from '../lib/report';
@@ -31,6 +31,7 @@ export function Dashboard() {
     debtors.sort((a, b) => b.offen - a.offen);
     const accounts = all<Account>('SELECT * FROM accounts WHERE aktiv = 1');
     const saldo = accounts.reduce((s, a) => s + (balanceAt(a, today) ?? 0), 0);
+    const unabgeglichen = accounts.filter((a) => !isCalibrated(a));
     const open = scalar<number>('SELECT COUNT(*) FROM transactions t WHERE NOT EXISTS (SELECT 1 FROM allocations a WHERE a.transaction_id = t.id)') ?? 0;
     const r = buildReport(year);
     const upcomingExits = members.filter((m) => m.austritt && m.austritt >= today).sort((a, b) => a.austritt!.localeCompare(b.austritt!));
@@ -43,7 +44,7 @@ export function Dashboard() {
     const ultimo = `${year - 1}-12-31`;
     const ohneAuszug = accounts.filter((a) => a.anfangsdatum <= ultimo && !scalar('SELECT 1 FROM balance_checkpoints WHERE account_id = ? AND datum = ?', [a.id, ultimo]));
     const incomplete = members.filter((m) => (!m.austritt || m.austritt >= today) && missingFields(m, req).length).length;
-    return { members, active, offenFaellig, debtors, saldo, open, r, upcomingExits, recentJoins, gradeCounts, lastTx, accounts, changes, incomplete, ohneAuszug };
+    return { members, active, offenFaellig, debtors, saldo, open, r, upcomingExits, recentJoins, gradeCounts, lastTx, accounts, changes, incomplete, ohneAuszug, unabgeglichen };
   });
   const frist = Number(getSetting('kuendigungsfrist_monate', '3')) || 3;
   const maxGrade = Math.max(1, ...d.gradeCounts.map((x) => x.n));
@@ -53,7 +54,13 @@ export function Dashboard() {
       <PageHeader title="Übersicht" subtitle={`${getSetting('verein_name')} · Stand ${formatDate(today)}`} />
       <div className="stats">
         <Stat label="Aktive Mitglieder" value={d.active.length} sub={`${d.recentJoins} Eintritte ${year}`} onClick={() => navigate('mitglieder')} />
-        <Stat label="Kontostand" value={formatEUR(d.saldo)} sub={d.lastTx ? `letzte Buchung ${formatDate(d.lastTx)}` : 'noch keine Buchungen'} onClick={() => navigate('konto')} />
+        <Stat
+          label="Kontostand"
+          value={formatEUR(d.saldo)}
+          tone={d.unabgeglichen.length ? 'warn' : undefined}
+          sub={d.unabgeglichen.length ? '⚠︎ nicht abgeglichen – nur Summe der Buchungen' : d.lastTx ? `letzte Buchung ${formatDate(d.lastTx)}` : 'noch keine Buchungen'}
+          onClick={() => { try { localStorage.setItem('vv:bank.tab', '"konten"'); } catch { /* egal */ } navigate('konto'); }}
+        />
         <Stat label={`Ergebnis ${year}`} value={formatEUR(d.r.ergebnis)} tone={d.r.ergebnis >= 0 ? 'ok' : 'bad'} sub={`${formatEUR(d.r.summeEin)} Einnahmen · ${formatEUR(d.r.summeAus)} Ausgaben`} onClick={() => navigate('guv')} />
         <Stat label="Fällige offene Beiträge" value={formatEUR(d.offenFaellig)} tone={d.offenFaellig > 0 ? 'warn' : 'ok'} sub={`${d.debtors.length} Mitglieder`} onClick={() => navigate('beitraege')} />
       </div>
@@ -66,10 +73,11 @@ export function Dashboard() {
             {!d.accounts.length && <li><a href="#/import">⇪ Ersten Kontoauszug (CSV) importieren</a></li>}
             {d.open > 0 && <li><a href="#/konto" onClick={() => { try { localStorage.setItem('vv:bank.tab', '"einrichtung"'); } catch { /* egal */ } }}>🔗 {d.open} Buchungen noch nicht zugeordnet</a></li>}
             {d.incomplete > 0 && <li><a href="#/mitglieder" onClick={() => { try { localStorage.setItem('vv:members.filter', '"unvollstaendig"'); } catch { /* egal */ } }}>👤 {d.incomplete} Mitglieder mit fehlenden Angaben</a></li>}
+            {d.unabgeglichen.length > 0 && <li className="warn"><a href="#/konto" onClick={() => { try { localStorage.setItem('vv:bank.tab', '"konten"'); } catch { /* egal */ } }}>🏦 Kontostand noch nicht abgeglichen ({d.unabgeglichen.map((a) => a.name).join(', ')}) – einmal den aktuellen Kontostand eingeben</a></li>}
             {d.ohneAuszug.length > 0 && <li><a href="#/konto" onClick={() => { try { localStorage.setItem('vv:bank.tab', '"konten"'); } catch { /* egal */ } }}>🏦 Kontostand 31.12.{year - 1} laut Auszug noch nicht erfasst ({d.ohneAuszug.map((a) => a.name).join(', ')})</a></li>}
             {d.r.fehlendeBelege > 0 && <li><a href="#/belege">📄 {d.r.fehlendeBelege} Buchungen {year} ohne Beleg</a></li>}
             {d.members.length === 0 && <li><a href="#/mitglieder">👤 Mitglieder anlegen</a></li>}
-            {d.changes === 0 && d.open === 0 && d.r.fehlendeBelege === 0 && d.incomplete === 0 && d.ohneAuszug.length === 0 && d.accounts.length > 0 && <li className="ok">✓ Alles erledigt</li>}
+            {d.changes === 0 && d.open === 0 && d.r.fehlendeBelege === 0 && d.incomplete === 0 && d.ohneAuszug.length === 0 && d.unabgeglichen.length === 0 && d.accounts.length > 0 && <li className="ok">✓ Alles erledigt</li>}
           </ul>
           <div className="callout">
             <strong>Kündigung heute eingehend:</strong> frühester Austritt zum <strong>{formatDate(earliestExitDate(today, frist))}</strong>

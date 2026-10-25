@@ -76,22 +76,62 @@ export function loadProfile(signature: string): { name: string; config: CsvConfi
 }
 
 /**
- * Vorschlag für den Anfangssaldo, wenn die Bank einen Saldo je Buchung liefert:
- * Saldo der ersten Buchung minus deren Betrag.
+ * Kontostand nach der letzten Buchung, wenn die Bank einen Saldo je Buchung liefert.
+ * Bei mehreren Buchungen am letzten Tag wird die Kette (Saldo − Betrag = Saldo der vorherigen) ausgewertet,
+ * damit die Sortierung der Datei keine Rolle spielt.
  */
-export function suggestOpeningBalance(txs: ParsedTx[]): { datum: string; saldo_cent: number } | null {
+export function endBalanceFromRows(txs: ParsedTx[]): { datum: string; saldo_cent: number } | null {
   const withSaldo = txs.filter((t) => t.saldo_cent != null);
   if (!withSaldo.length) return null;
-  const sorted = [...withSaldo].sort((a, b) => a.buchungsdatum.localeCompare(b.buchungsdatum));
-  const firstDay = sorted[0].buchungsdatum;
-  const sameDay = txs.filter((t) => t.buchungsdatum === firstDay);
-  const dayTotal = sameDay.reduce((s, t) => s + t.betrag_cent, 0);
-  // Kandidat: Saldo, der genau alle Buchungen des ersten Tages enthält
-  const candidates = sameDay.filter((t) => t.saldo_cent != null).map((t) => t.saldo_cent! - dayTotal);
-  const freq = new Map<number, number>();
-  candidates.forEach((c) => freq.set(c, (freq.get(c) ?? 0) + 1));
-  const best = [...freq.entries()].sort((a, b) => b[1] - a[1])[0];
-  return best ? { datum: firstDay, saldo_cent: best[0] } : null;
+  const last = withSaldo.reduce((m, t) => (t.buchungsdatum > m ? t.buchungsdatum : m), withSaldo[0].buchungsdatum);
+  const day = withSaldo.filter((t) => t.buchungsdatum === last);
+  const predecessors = new Set(day.map((t) => t.saldo_cent! - t.betrag_cent));
+  // Endstand = der Saldo, der nicht Vorgänger einer anderen Buchung desselben Tages ist
+  const end = day.find((t) => !predecessors.has(t.saldo_cent!)) ?? day[0];
+  return { datum: last, saldo_cent: end.saldo_cent! };
+}
+
+/** Wurde für das Konto schon ein echter Kontostand hinterlegt (Anfangssaldo oder Kontrollwert)? */
+export function isCalibrated(account: Account): boolean {
+  return account.anfangssaldo_cent !== 0 || !!scalar('SELECT 1 FROM balance_checkpoints WHERE account_id = ?', [account.id]);
+}
+
+/** Speichert einen Kontostand laut Bank als Kontrollwert (Ende des Tages). */
+export function saveCheckpoint(accountId: number, datum: string, saldo: number, notiz: string | null) {
+  run(
+    `INSERT INTO balance_checkpoints(account_id, datum, saldo_cent, notiz) VALUES (?,?,?,?)
+     ON CONFLICT(account_id, datum) DO UPDATE SET saldo_cent = excluded.saldo_cent, notiz = COALESCE(excluded.notiz, balance_checkpoints.notiz)`,
+    [accountId, datum, saldo, notiz],
+  );
+}
+
+/**
+ * Rechnet den Anfangssaldo aus einem bekannten Kontostand zurück:
+ * Anfangssaldo = Kontostand am Stichtag − Summe aller Buchungen vom Anfangsdatum bis zum Stichtag.
+ * Danach stimmt der berechnete Kontostand an jedem Tag mit der Bank überein (sofern alle Umsätze importiert sind).
+ */
+export function calibrateOpening(accountId: number, datum: string, saldo: number, notiz: string | null = null): number {
+  const acc = get<Account>('SELECT * FROM accounts WHERE id = ?', [accountId]);
+  if (!acc) throw new Error('Konto nicht gefunden');
+  const first = scalar<string>('SELECT MIN(buchungsdatum) FROM transactions WHERE account_id = ?', [accountId]);
+  // Anfangsdatum nie nach der ersten Buchung
+  const anfangsdatum = first && first < acc.anfangsdatum ? first : acc.anfangsdatum;
+  const sum = scalar<number>(
+    'SELECT COALESCE(SUM(betrag_cent),0) FROM transactions WHERE account_id = ? AND buchungsdatum >= ? AND buchungsdatum <= ?',
+    [accountId, anfangsdatum, datum],
+  ) ?? 0;
+  const opening = saldo - sum;
+  tx(() => {
+    run('UPDATE accounts SET anfangssaldo_cent = ?, anfangsdatum = ? WHERE id = ?', [opening, anfangsdatum, accountId]);
+    saveCheckpoint(accountId, datum, saldo, notiz);
+  });
+  return opening;
+}
+
+/** Letzter in einer Importdatei gelieferter Saldo eines Kontos (aus den gespeicherten Buchungen). */
+export function storedEndBalance(accountId: number): { datum: string; saldo_cent: number } | null {
+  const rows = all<Transaction>('SELECT * FROM transactions WHERE account_id = ? AND saldo_cent IS NOT NULL', [accountId]);
+  return endBalanceFromRows(rows.map((t) => ({ ...t, row: 0, auftragskonto: null, pending: false }) as ParsedTx));
 }
 
 // ---------- Kontostände ----------

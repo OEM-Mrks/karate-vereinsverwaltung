@@ -88,3 +88,25 @@ describe('Import, Zuordnung und GuV', () => {
     expect(Array.from(scalar<Uint8Array>('SELECT daten FROM documents')!)).toEqual([1, 2, 3]);
   });
 });
+
+describe('Kontostand abgleichen', () => {
+  it('rechnet den Anfangssaldo aus einem bekannten Kontostand zurück', async () => {
+    const { calibrateOpening, isCalibrated, balanceAt } = await import('../src/lib/bank');
+    const a = analyze(load('sparkasse-camt-beispiel.csv'));
+    const parsed = toTransactions(a.rows, a.config).ok;
+    const acc = findOrCreateAccount(parsed[0].auftragskonto, 'Giro', parsed[0].buchungsdatum);
+    importTransactions(acc, parsed, { dateiname: 'a.csv', profil: a.bank });
+    const account = () => all<import('../src/db/schema').Account>('SELECT * FROM accounts WHERE id = ?', [acc])[0];
+    expect(isCalibrated(account())).toBe(false);
+    // Ohne Abgleich ist der "Kontostand" nur die Summe der Buchungen
+    const summe = 21600 + 30000 - 15000 - 123456 - 990;
+    expect(balanceAt(account(), '2026-01-31')).toBe(summe);
+    // Online-Banking zeigt am 31.01.: 5.000,00 €
+    const opening = calibrateOpening(acc, '2026-01-31', 500000);
+    expect(opening).toBe(500000 - summe);
+    expect(isCalibrated(account())).toBe(true);
+    expect(balanceAt(account(), '2026-01-31')).toBe(500000);
+    expect(balanceAt(account(), '2026-01-04')).toBe(500000 - summe + 21600);
+    expect(scalar('SELECT saldo_cent FROM balance_checkpoints WHERE account_id = ? AND datum = ?', [acc, '2026-01-31'])).toBe(500000);
+  });
+});

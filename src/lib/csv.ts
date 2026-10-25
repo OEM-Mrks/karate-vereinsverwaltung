@@ -215,6 +215,43 @@ export function detectDecimal(rows: string[][], mapping: Mapping): ',' | '.' {
   return dot > comma ? '.' : ',';
 }
 
+export type FileBalance = {
+  /** 'anfang' = Stand vor der ersten Buchung, 'ende' = Stand nach der letzten Buchung */
+  art: 'anfang' | 'ende';
+  /** Stichtag (Ende des Tages); null = nicht angegeben, gilt für den letzten Buchungstag */
+  datum: string | null;
+  saldo_cent: number;
+  text: string;
+};
+
+/**
+ * Sucht Kontostände außerhalb der Umsatztabelle, z. B. im Vorspann oder in Fußzeilen:
+ * "Kontostand vom 31.10.2026:";"1.234,56 €" (DKB), "Saldo;4.025,00;EUR" (ING), "Neuer Saldo;31.12.2026;…" (Volksbank).
+ */
+export function findBalances(rows: string[][], headerRow: number, decimal: ',' | '.'): FileBalance[] {
+  const out: FileBalance[] = [];
+  rows.forEach((r, i) => {
+    if (i === headerRow) return;
+    const text = r.join(' ').replace(/\s+/g, ' ').trim();
+    const label = text.match(/(alter saldo|anfangssaldo|anfangsbestand|neuer saldo|endsaldo|schlusssaldo|kontostand|saldo)/i)?.[1];
+    if (!label) return;
+    // Nur Zeilen, die keine normalen Umsätze sind (Vorspann/Fußzeile oder wenige Spalten)
+    if (i > headerRow && r.filter(Boolean).length > 5) return;
+    const dateMatch = text.match(/(\d{1,2}\.\d{1,2}\.\d{2,4}|\d{4}-\d{2}-\d{2})/g);
+    const datum = dateMatch ? parseDate(dateMatch[dateMatch.length - 1]) : null;
+    let saldo: number | null = null;
+    for (const cell of r) {
+      const c = cell.trim();
+      if (!c || /\d{1,2}\.\d{1,2}\.\d{2,4}/.test(c) || !/\d/.test(c)) continue;
+      const v = parseAmount(c.replace(/^(?:.*?:)\s*/, ''), decimal);
+      if (v != null && /[.,]\d{2}\s*(€|EUR)?-?$/i.test(c.replace(/\s/g, ''))) saldo = v;
+    }
+    if (saldo == null) return;
+    out.push({ art: /alter|anfang/i.test(label) ? 'anfang' : 'ende', datum, saldo_cent: saldo, text });
+  });
+  return out;
+}
+
 /** Analysiert eine Datei vollständig und schlägt eine Konfiguration vor. */
 export function analyze(buf: ArrayBuffer | Uint8Array) {
   const { text, encoding } = decodeBytes(buf);
@@ -225,7 +262,7 @@ export function analyze(buf: ArrayBuffer | Uint8Array) {
   const mapping = autoMap(header);
   const decimal = detectDecimal(rows.slice(headerRow + 1), mapping);
   const config: CsvConfig = { encoding, delimiter, headerRow, decimal, mapping, skipPending: true };
-  return { text, rows, header, config, bank: guessBank(header), signature: headerSignature(header) };
+  return { text, rows, header, config, bank: guessBank(header), signature: headerSignature(header), balances: findBalances(rows, headerRow, decimal) };
 }
 
 // ---------- Zeilen umwandeln ----------

@@ -2,12 +2,34 @@ import { useMemo, useRef, useState } from 'react';
 import { all, get, run, scalar, tx } from '../db/db';
 import type { Account } from '../db/schema';
 import { navigate, useQuery } from '../hooks';
-import { autoAssign, findOrCreateAccount, importTransactions, loadProfile, saveProfile, suggestOpeningBalance, type ImportResult } from '../lib/bank';
 import {
-  analyze, decodeBytes, detectHeaderRow, FIELDS, parseCSV, toTransactions, type CsvConfig, type FieldId, type Mapping,
+  autoAssign, balanceAt, calibrateOpening, endBalanceFromRows, findOrCreateAccount, importTransactions, isCalibrated, loadProfile,
+  saveCheckpoint, saveProfile, type ImportResult,
+} from '../lib/bank';
+import { CalibrateForm } from '../components/Calibrate';
+import {
+  analyze, decodeBytes, detectHeaderRow, FIELDS, findBalances, parseCSV, toTransactions, type CsvConfig, type FieldId, type Mapping,
 } from '../lib/csv';
-import { formatDate, formatEUR, formatIBAN, normalizeIBAN } from '../lib/format';
+import { formatDate, formatEUR, formatIBAN, fromISO, normalizeIBAN, toISO } from '../lib/format';
 import { attempt, Badge, Checkbox, Empty, Field, PageHeader, Select, Stat, TextInput, toast } from '../components/ui';
+
+type FoundBalance = { datum: string; saldo_cent: number; quelle: string };
+
+type DoneInfo = ImportResult & {
+  auto: number;
+  accountId: number;
+  /** In der Datei gefundene Kontostände */
+  balances: FoundBalance[];
+  /** Wurde der Anfangssaldo dabei automatisch berechnet? */
+  calibrated: FoundBalance | null;
+  lastDate: string;
+};
+
+function dayBefore(iso: string): string {
+  const d = fromISO(iso);
+  d.setDate(d.getDate() - 1);
+  return toISO(d);
+}
 
 type State = {
   fileName: string;
@@ -20,7 +42,7 @@ type State = {
 
 export function ImportPage() {
   const [st, setSt] = useState<State | null>(null);
-  const [result, setResult] = useState<(ImportResult & { auto: number; accountId: number; opening: { datum: string; saldo_cent: number } | null }) | null>(null);
+  const [result, setResult] = useState<(DoneInfo) | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
 
@@ -77,7 +99,7 @@ export function ImportPage() {
 function ImportWizard(props: {
   st: State;
   setSt: (s: State) => void;
-  onDone: (r: ImportResult & { auto: number; accountId: number; opening: { datum: string; saldo_cent: number } | null }) => void;
+  onDone: (r: DoneInfo) => void;
   onCancel: () => void;
 }) {
   const { st, setSt } = props;
@@ -121,6 +143,18 @@ function ImportWizard(props: {
   const ein = parsed.ok.filter((t) => t.betrag_cent > 0).reduce((s, t) => s + t.betrag_cent, 0);
   const aus = parsed.ok.filter((t) => t.betrag_cent < 0).reduce((s, t) => s + t.betrag_cent, 0);
   const dates = parsed.ok.map((t) => t.buchungsdatum).sort();
+  // Kontostände aus der Datei: Saldo-Spalte und/oder Angaben im Vorspann bzw. in Fußzeilen
+  const fileBalances = useMemo<FoundBalance[]>(() => {
+    if (!dates.length) return [];
+    const out: FoundBalance[] = [];
+    const end = endBalanceFromRows(parsed.ok);
+    if (end) out.push({ ...end, quelle: 'Saldo-Spalte' });
+    for (const b of findBalances(rows, config.headerRow, config.decimal)) {
+      const datum = b.datum ?? (b.art === 'anfang' ? dayBefore(dates[0]) : dates[dates.length - 1]);
+      if (!out.some((x) => x.datum === datum && x.saldo_cent === b.saldo_cent)) out.push({ datum, saldo_cent: b.saldo_cent, quelle: `„${b.text.slice(0, 60)}"` });
+    }
+    return out.sort((a, b) => a.datum.localeCompare(b.datum));
+  }, [parsed, rows, config.headerRow, config.decimal]);
 
   const doImport = () => {
     if (!parsed.ok.length) return;
@@ -132,12 +166,19 @@ function ImportWizard(props: {
           accId = findOrCreateAccount(ownIbans[0] ?? null, newName.trim() || 'Girokonto', dates[0]);
           if (st.bank.startsWith('Sparkasse')) run('UPDATE accounts SET bank = COALESCE(bank, ?) WHERE id = ?', ['Sparkasse', accId]);
         } else accId = accountId;
-        const hadTx = !!scalar('SELECT 1 FROM transactions WHERE account_id = ?', [accId]);
+        const wasCalibrated = isCalibrated(get<Account>('SELECT * FROM accounts WHERE id = ?', [accId])!);
         const r = importTransactions(accId, parsed.ok, { dateiname: st.fileName, profil: st.bank });
         saveProfile(st.bank, st.signature, config);
         const auto = doAuto && r.newIds.length ? autoAssign(r.newIds).zugeordnet : 0;
-        const opening = !hadTx ? suggestOpeningBalance(parsed.ok) : null;
-        result = { ...r, auto, accountId: accId, opening };
+        // Kontostand aus der Datei übernehmen: bei neuem Konto Anfangssaldo zurückrechnen, sonst als Kontrollwert speichern
+        let calibrated: FoundBalance | null = null;
+        const latest = fileBalances[fileBalances.length - 1];
+        if (latest && !wasCalibrated) {
+          calibrateOpening(accId, latest.datum, latest.saldo_cent, `aus Import ${st.fileName}`);
+          calibrated = latest;
+        }
+        for (const b of fileBalances) saveCheckpoint(accId, b.datum, b.saldo_cent, `aus Import ${st.fileName}`);
+        result = { ...r, auto, accountId: accId, balances: fileBalances, calibrated, lastDate: dates[dates.length - 1] };
       });
     });
     if (ok && result) props.onDone(result);
@@ -168,6 +209,13 @@ function ImportWizard(props: {
         </div>
       </div>
 
+      <div className={`callout ${fileBalances.length ? 'ok' : 'warn'}`}>
+        {fileBalances.length ? (
+          <>✓ Kontostand in der Datei gefunden: {fileBalances.map((b) => `${formatEUR(b.saldo_cent)} am ${formatDate(b.datum)}`).join(', ')} – wird beim Import übernommen.</>
+        ) : (
+          <>Diese Datei enthält keinen Kontostand (bei Sparkasse CSV-CAMT normal). Nach dem Import fragt die App einmal nach dem aktuellen Kontostand, damit die Kontostände stimmen.</>
+        )}
+      </div>
       <div className="grid-2">
         <div className="card">
           <h3>Zielkonto</h3>
@@ -270,13 +318,11 @@ function ImportWizard(props: {
   );
 }
 
-function ImportDone({ r, onAnother }: { r: ImportResult & { auto: number; accountId: number; opening: { datum: string; saldo_cent: number } | null }; onAnother: () => void }) {
+function ImportDone({ r, onAnother }: { r: DoneInfo; onAnother: () => void }) {
   const account = useQuery(() => get<Account>('SELECT * FROM accounts WHERE id = ?', [r.accountId]), [r.accountId]);
   const offen = r.neu - r.auto;
-  const applyOpening = () => {
-    if (!r.opening) return;
-    attempt(() => run('UPDATE accounts SET anfangssaldo_cent = ?, anfangsdatum = ? WHERE id = ?', [r.opening!.saldo_cent, r.opening!.datum, r.accountId]), 'Anfangssaldo übernommen');
-  };
+  const checks = useQuery(() => (account ? r.balances.map((b) => ({ ...b, berechnet: balanceAt(account, b.datum) })) : []), [account]);
+  const calibratedNow = account ? isCalibrated(account) : false;
   return (
     <div className="card">
       <h3>✓ Import abgeschlossen</h3>
@@ -286,17 +332,33 @@ function ImportDone({ r, onAnother }: { r: ImportResult & { auto: number; accoun
         <Stat label="Automatisch zugeordnet" value={r.auto} tone="ok" />
         <Stat label="Noch zuzuordnen" value={offen} tone={offen ? 'warn' : 'ok'} />
       </div>
-      {account && (
-        <div className="callout">
-          <strong>Anfangssaldo des Kontos „{account.name}":</strong> {formatEUR(account.anfangssaldo_cent)} zum {formatDate(account.anfangsdatum)}.
-          {r.opening && r.opening.saldo_cent !== account.anfangssaldo_cent ? (
-            <div className="inline mt">
-              Laut Datei betrug der Kontostand vor der ersten Buchung <strong>{formatEUR(r.opening.saldo_cent)}</strong> ({formatDate(r.opening.datum)}).
-              <button onClick={applyOpening}>Übernehmen</button>
+      {account && r.calibrated && (
+        <div className="callout ok">
+          ✓ Kontostand aus der Datei übernommen: <strong>{formatEUR(r.calibrated.saldo_cent)}</strong> am {formatDate(r.calibrated.datum)}.
+          Der Anfangssaldo von „{account.name}" wurde daraus berechnet: {formatEUR(account.anfangssaldo_cent)} zum {formatDate(account.anfangsdatum)}.
+        </div>
+      )}
+      {account && !r.calibrated && checks.length > 0 && (
+        <div className={`callout ${checks.every((c) => c.berechnet === c.saldo_cent) ? 'ok' : 'bad'}`}>
+          {checks.map((c) => (
+            <div key={c.datum}>
+              Kontostand am {formatDate(c.datum)} laut Datei {formatEUR(c.saldo_cent)}, berechnet {formatEUR(c.berechnet)}
+              {c.berechnet === c.saldo_cent ? ' ✓ stimmt' : ` – Abweichung ${formatEUR((c.berechnet ?? 0) - c.saldo_cent)}. Fehlen ältere Umsätze, oder ist der Anfangssaldo falsch?`}
             </div>
-          ) : !r.opening && account.anfangssaldo_cent === 0 ? (
-            <div className="muted small mt">Die Datei enthält keinen Saldo. Bitte trage den Kontostand zum Anfangsdatum unter <a href="#/konto">Konto → Konten & Kontostände</a> ein, damit die Kontostände in der GuV stimmen.</div>
-          ) : null}
+          ))}
+          {!checks.every((c) => c.berechnet === c.saldo_cent) && <div className="mt"><CalibrateForm account={account} datum={checks[checks.length - 1].datum} compact /></div>}
+        </div>
+      )}
+      {account && !r.balances.length && !calibratedNow && (
+        <div className="callout warn">
+          <strong>Bitte einmal den Kontostand eingeben.</strong> Die Datei enthält keinen Kontostand – ohne ihn zeigt die App nur die Summe der Buchungen.
+          Trage den Kontostand laut Online-Banking am letzten Buchungstag ({formatDate(r.lastDate)}) oder heute ein; der Anfangssaldo wird daraus zurückgerechnet.
+          <div className="mt"><CalibrateForm account={account} datum={r.lastDate} compact /></div>
+        </div>
+      )}
+      {account && !r.balances.length && calibratedNow && (
+        <div className="callout">
+          Berechneter Kontostand „{account.name}" am {formatDate(r.lastDate)}: <strong>{formatEUR(balanceAt(account, r.lastDate))}</strong> – vergleiche ihn mit deinem Online-Banking.
         </div>
       )}
       {offen > 0 && (

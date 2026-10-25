@@ -111,7 +111,9 @@ input:focus, select:focus, textarea:focus, button:focus-visible {
   outline-offset: 1px;
   border-color: var(--accent);
 }
-input[type='checkbox'] { width: auto; accent-color: var(--accent); }
+input[type='checkbox'], input[type='radio'] { width: auto; accent-color: var(--accent); }
+.radio-list { margin: 8px 0; }
+.calibrate .form-grid { margin-bottom: 4px; }
 textarea { resize: vertical; }
 .money-input { position: relative; }
 .money-input input { text-align: right; padding-right: 26px; font-variant-numeric: tabular-nums; }

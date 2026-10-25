@@ -57,3 +57,31 @@ describe('CSV-Import', () => {
     expect(new Set(fingerprints(1, [r.ok[0], r.ok[0]])).size).toBe(2);
   });
 });
+
+describe('Kontostände in der Datei', () => {
+  it('liest den Kontostand aus dem Vorspann (DKB)', () => {
+    const a = analyze(load('dkb-beispiel.csv'));
+    expect(a.bank).toBe('DKB');
+    expect(a.balances).toEqual([{ art: 'ende', datum: '2026-03-31', saldo_cent: 123456, text: 'Kontostand vom 31.03.2026: 1.234,56 €' }]);
+    const r = toTransactions(a.rows, a.config);
+    expect(r.ok.map((t) => [t.gegen_name, t.betrag_cent])).toEqual([['IONOS SE', -1200], ['Lea Schmidt', 2500]]);
+  });
+
+  it('findet keinen Kontostand in Sparkasse CSV-CAMT', () => {
+    expect(analyze(load('sparkasse-camt-beispiel.csv')).balances).toEqual([]);
+  });
+
+  it('ermittelt den Endstand aus der Saldo-Spalte unabhängig von der Sortierung', async () => {
+    const { endBalanceFromRows } = await import('../src/lib/bank');
+    const a = analyze(load('ing-beispiel.csv'));
+    const txs = toTransactions(a.rows, a.config).ok;
+    expect(endBalanceFromRows(txs)).toEqual({ datum: '2026-03-02', saldo_cent: 402500 });
+    // Zwei Buchungen am selben Tag, Datei absteigend sortiert
+    const day = [
+      { ...txs[0], buchungsdatum: '2026-04-01', betrag_cent: -500, saldo_cent: 9500 },
+      { ...txs[0], buchungsdatum: '2026-04-01', betrag_cent: 1000, saldo_cent: 10000 },
+    ];
+    expect(endBalanceFromRows(day)).toEqual({ datum: '2026-04-01', saldo_cent: 9500 });
+    expect(endBalanceFromRows([...day].reverse())).toEqual({ datum: '2026-04-01', saldo_cent: 9500 });
+  });
+});
