@@ -4,7 +4,7 @@
 import { all, get, run, tx } from '../db/db';
 import type { Partner, Recurring, RecurringAmount, RecurringPayment, Rhythmus, Transaction } from '../db/schema';
 import { setAllocations } from './bank';
-import { fromISO, normalizeIBAN, normalizeText, toISO, todayISO } from './format';
+import { fromISO, normalizeIBAN, normalizeText, toISO, todayISO, yearOf } from './format';
 
 export const RHYTHMEN: { id: Rhythmus; label: string; jeJahr: number }[] = [
   { id: 'jaehrlich', label: 'jährlich', jeJahr: 1 },
@@ -167,4 +167,112 @@ export function abhakenRueckgaengig(paymentId: number) {
 
 export function belegZuZahlung(paymentId: number, documentId: number) {
   run('UPDATE recurring_payments SET document_id = ? WHERE id = ?', [documentId, paymentId]);
+}
+
+// ---------- Aus einer Buchung übernehmen ----------
+
+/** Rhythmus aus den Abständen gleichartiger Zahlungen (gleiche IBAN bzw. gleicher Name, gleiche Richtung) schätzen. */
+export function rhythmusErkennen(t: Pick<Transaction, 'id' | 'buchungsdatum' | 'betrag_cent' | 'gegen_iban' | 'gegen_name'>): Rhythmus {
+  const iban = normalizeIBAN(t.gegen_iban);
+  const name = normalizeText(t.gegen_name);
+  if (!iban && !name) return 'jaehrlich';
+  const d = fromISO(t.buchungsdatum);
+  const von = new Date(d); von.setDate(von.getDate() - 400);
+  const bis = new Date(d); bis.setDate(bis.getDate() + 400);
+  const daten = all<{ buchungsdatum: string; gegen_iban: string | null; gegen_name: string | null }>(
+    `SELECT buchungsdatum, gegen_iban, gegen_name FROM transactions WHERE buchungsdatum BETWEEN ? AND ? AND ${t.betrag_cent < 0 ? 'betrag_cent < 0' : 'betrag_cent > 0'}`,
+    [toISO(von), toISO(bis)],
+  )
+    .filter((x) => (iban ? normalizeIBAN(x.gegen_iban) === iban : normalizeText(x.gegen_name) === name))
+    .map((x) => fromISO(x.buchungsdatum).getTime())
+    .sort((a, b) => a - b);
+  if (daten.length < 2) return 'jaehrlich';
+  const abstaende = daten.slice(1).map((x, i) => (x - daten[i]) / 86_400_000).filter((x) => x > 3).sort((a, b) => a - b);
+  const median = abstaende[Math.floor(abstaende.length / 2)] ?? 365;
+  return median <= 45 ? 'monatlich' : median <= 120 ? 'quartal' : median <= 230 ? 'halbjaehrlich' : 'jaehrlich';
+}
+
+/** Erste Fälligkeit im Jahr so wählen, dass der Monat der Buchung eine Fälligkeit ist (monatlich → Januar, quartalsweise → Jan/Feb/März …). */
+export function ersteFaelligkeit(rhythmus: Rhythmus, monat: number): number {
+  const step = 12 / jeJahr(rhythmus);
+  return ((monat - 1) % step) + 1;
+}
+
+/** Nummer der Fälligkeit, in die ein Monat fällt. */
+export function periodeFuer(r: Pick<Recurring, 'rhythmus' | 'faellig_monat'>, monat: number): number {
+  for (let p = 1; p <= jeJahr(r.rhythmus); p++) if (faelligMonat(r, p) === monat) return p;
+  return 1;
+}
+
+/** Vorbelegung einer wiederkehrenden Zahlung aus einer Buchung (Zuordnung darf noch ungespeichert sein). */
+export function entwurfAusBuchung(
+  t: Transaction,
+  zuordnung: { category_id: number | null; partner_id: number | null },
+): Partial<RecurringView> {
+  const rhythmus = rhythmusErkennen(t);
+  const monat = Number(t.buchungsdatum.slice(5, 7));
+  const partner = zuordnung.partner_id ? get<Partner>('SELECT * FROM partners WHERE id = ?', [zuordnung.partner_id]) : undefined;
+  return {
+    name: partner?.name ?? t.gegen_name ?? '',
+    partner_id: zuordnung.partner_id,
+    category_id: zuordnung.category_id ?? partner?.default_category_id ?? null,
+    richtung: t.betrag_cent < 0 ? 'aus' : 'ein',
+    rhythmus,
+    faellig_monat: ersteFaelligkeit(rhythmus, monat),
+    aktiv: 1,
+    amounts: [{ id: -1, recurring_id: 0, ab_jahr: yearOf(t.buchungsdatum), betrag_cent: Math.abs(t.betrag_cent) }],
+  };
+}
+
+/**
+ * Offene Fälligkeiten eines Jahres mit Buchungen in genau passender Höhe abhaken, die nahe am Fälligkeitsmonat liegen.
+ * Gibt die Anzahl der abgehakten Fälligkeiten zurück.
+ */
+export function automatischAbhaken(recurringId: number, jahr: number): number {
+  // Üblicher Zahltag aus bereits abgehakten Zahlungen (z. B. immer am 5.), sonst Monatsmitte
+  const tage = all<{ tag: number }>("SELECT CAST(substr(bezahlt_am, 9, 2) AS INTEGER) AS tag FROM recurring_payments WHERE recurring_id = ? AND bezahlt_am IS NOT NULL ORDER BY tag", [recurringId]).map((x) => x.tag);
+  const tag = tage[Math.floor(tage.length / 2)] ?? 15;
+  let n = 0;
+  for (const f of faelligkeiten(jahr).filter((x) => x.r.id === recurringId && !x.zahlung)) {
+    const maxTage = (12 / jeJahr(f.r.rhythmus)) * 15 + 16;
+    const due = fromISO(`${jahr}-${String(f.monat).padStart(2, '0')}-${String(Math.min(tag, 28)).padStart(2, '0')}`).getTime();
+    const abstand = (v: Vorschlag) => Math.abs(fromISO(v.buchungsdatum).getTime() - due) / 86_400_000;
+    const t = vorschlaege(f).filter((v) => v.exakt && abstand(v) <= maxTage).sort((a, b) => abstand(a) - abstand(b))[0];
+    if (!t) continue;
+    abhaken({ recurring_id: recurringId, jahr, periode: f.periode, bezahlt_am: t.buchungsdatum, betrag_cent: Math.abs(t.betrag_cent), transaction_id: t.id, zuordnen: true });
+    n++;
+  }
+  return n;
+}
+
+/** Zu welcher wiederkehrenden Zahlung gehört eine Buchung? */
+export function wiederkehrendFuerBuchung(transactionId: number): { recurring_id: number; name: string; jahr: number; periode: number } | undefined {
+  return get(
+    `SELECT z.recurring_id, r.name, z.jahr, z.periode FROM recurring_payments z JOIN recurring r ON r.id = z.recurring_id WHERE z.transaction_id = ?`,
+    [transactionId],
+  );
+}
+
+/** Nach dem Anlegen: Fälligkeiten seit Beginn (höchstens drei Jahre zurück) mit passenden Buchungen abhaken. */
+export function abgleichSeitBeginn(recurringId: number, bisJahr = new Date().getFullYear()): number {
+  const r = get<Recurring>('SELECT * FROM recurring WHERE id = ?', [recurringId]);
+  if (!r) return 0;
+  let n = 0;
+  for (let j = Math.max(r.ab_jahr, bisJahr - 3); j <= bisJahr; j++) n += automatischAbhaken(recurringId, j);
+  return n;
+}
+
+/** Die auslösende Buchung abhaken und weitere passende Buchungen seit Beginn abgleichen. Gibt die Anzahl weiterer Treffer zurück. */
+export function ausBuchungUebernehmen(recurringId: number, transactionId: number): number {
+  const r = get<Recurring>('SELECT * FROM recurring WHERE id = ?', [recurringId]);
+  const t = get<Transaction>('SELECT * FROM transactions WHERE id = ?', [transactionId]);
+  if (!r || !t) return 0;
+  const jahr = yearOf(t.buchungsdatum);
+  if (r.ab_jahr <= jahr && (!r.bis_jahr || r.bis_jahr >= jahr)) {
+    abhaken({
+      recurring_id: r.id, jahr, periode: periodeFuer(r, Number(t.buchungsdatum.slice(5, 7))), bezahlt_am: t.buchungsdatum,
+      betrag_cent: Math.abs(t.betrag_cent), transaction_id: t.id, zuordnen: true,
+    });
+  }
+  return abgleichSeitBeginn(r.id);
 }

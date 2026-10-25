@@ -40,6 +40,7 @@ Keine Cloud, kein Server, kein Konto. Alle Daten liegen in einer SQLite-Datei, d
 - Mehrere Belege je Buchung: Bei Splitbuchungen wird je belegpflichtiger Zeile ein Beleg erwartet („1 von 2 Belegen“); gehört alles zu einer Rechnung, genügt der Haken „Alle Belege erfasst“
 - **Eigenbeleg-Generator** für Zahlungen ohne Rechnung (z. B. Verbandsbeiträge): übernimmt Datum, Betrag, Empfänger, Zweck und Kategorie aus der Buchung, dazu eine Begründung – wird als PDF mit Unterschriftszeilen gespeichert und der Buchung zugeordnet
 - **Wiederkehrende Zahlungen** (Dachverband, Landesverband, Versicherungen …): Betrag ab Jahr, jährlich/halbjährlich/vierteljährlich/monatlich, Fälligkeiten je Jahr abhaken – die passende Kontobewegung wird vorgeschlagen, auf Wunsch zugeordnet und gleich mit Eigenbeleg versehen; überfällige Zahlungen erscheinen in der Übersicht
+- Jede Buchung lässt sich mit **„Als wiederkehrende Zahlung übernehmen“** in die Tabelle aufnehmen (z. B. Ionos): Partner, Kategorie und Betrag werden übernommen, der Rhythmus aus früheren Zahlungen erkannt und alle passenden Buchungen seit Beginn automatisch abgehakt; **Monatsvorschau** mit noch offenen Beträgen für die Planung
 
 - **Sammelbearbeitung**: Buchungen anhaken (z. B. nach Suche „Ionos“) und Lieferant, Kategorie oder „geprüft“ für alle auf einmal setzen; Filter „Ausgaben ohne Lieferant“; beim Zuordnen eines Lieferanten auf Wunsch auch alle weiteren Buchungen desselben Zahlungspartners ergänzen
 

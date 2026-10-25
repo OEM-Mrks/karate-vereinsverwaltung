@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { get } from '../db/db';
 import type { Recurring, Rhythmus } from '../db/schema';
 import { useLocalState, useQuery } from '../hooks';
@@ -6,7 +6,7 @@ import { formatDate, formatEUR, todayISO } from '../lib/format';
 import { categoryOptions, partnerOptions } from '../lib/lookups';
 import { EIGENBELEG_GRUENDE, eigenbelegAusBuchung, eigenbelegSpeichern, type Eigenbeleg } from '../lib/eigenbeleg';
 import {
-  abhaken, abhakenRueckgaengig, belegZuZahlung, betragFuer, deleteRecurring, faelligkeiten, MONATE, RHYTHMEN, recurringList, saveRecurring,
+  abgleichSeitBeginn, abhaken, abhakenRueckgaengig, automatischAbhaken, belegZuZahlung, betragFuer, deleteRecurring, faelligkeiten, MONATE, RHYTHMEN, recurringList, saveRecurring,
   vorschlaege, type Faelligkeit, type RecurringView, type Vorschlag,
 } from '../lib/recurring';
 import { DocViewer } from '../components/Docs';
@@ -26,6 +26,7 @@ export function RecurringPage() {
   const [check, setCheck] = useState<{ f: Faelligkeit; t: Vorschlag | null } | null>(null);
   const [eigen, setEigen] = useState<{ f: Faelligkeit; initial: Eigenbeleg } | null>(null);
   const [view, setView] = useState<number | null>(null);
+  const [nurOffene, setNurOffene] = useLocalState('wiederkehrend.nurOffene', false);
   const liste = useQuery(() => recurringList());
   const due = useQuery(() => faelligkeiten(year).map((f) => ({ f, vorschlag: f.zahlung ? null : vorschlaege(f)[0] ?? null })), [year]);
 
@@ -47,7 +48,16 @@ export function RecurringPage() {
         subtitle="Verbandsbeiträge, Versicherungen und andere regelmäßige Zahlungen – Betrag ab Jahr festlegen, jedes Jahr abhaken."
         actions={<button className="primary" onClick={() => setEdit({ rhythmus: 'jaehrlich', richtung: 'aus', faellig_monat: 1, aktiv: 1, amounts: [] })}>+ Zahlung anlegen</button>}
       />
-      <div className="toolbar"><YearSelect value={year} onChange={setYear} /></div>
+      <div className="toolbar">
+        <YearSelect value={year} onChange={setYear} />
+        {due.some((d) => !d.f.zahlung) && (
+          <button onClick={() => {
+            let n = 0;
+            attempt(() => { for (const r of liste) n += automatischAbhaken(r.id, year); });
+            toast(n ? `${n} ${n === 1 ? 'Fälligkeit' : 'Fälligkeiten'} mit passender Buchung abgehakt` : 'Keine Buchung mit genau passendem Betrag gefunden', n ? 'ok' : 'info');
+          }}>Mit Buchungen abgleichen</button>
+        )}
+      </div>
       {due.length > 0 && (
         <div className="stats">
           <Stat label={`Fällig ${year}`} value={formatEUR(summe)} sub={`${due.length} ${due.length === 1 ? 'Zahlung' : 'Zahlungen'}`} />
@@ -58,13 +68,16 @@ export function RecurringPage() {
       )}
 
       <div className="card">
-        <div className="card-head"><h3>Fälligkeiten {year}</h3></div>
+        <div className="card-head">
+          <h3>Fälligkeiten {year}</h3>
+          {erledigt.length > 0 && <Checkbox checked={nurOffene} onChange={setNurOffene} label={`Erledigte ausblenden (${erledigt.length})`} />}
+        </div>
         {due.length ? (
           <div className="table-wrap">
             <table className="table">
               <thead><tr><th>Fällig</th><th>Zahlung</th><th className="num">Betrag</th><th>Status</th><th>Buchung / Beleg</th><th /></tr></thead>
               <tbody>
-                {due.map(({ f, vorschlag }) => {
+                {due.filter((d) => !nurOffene || !d.f.zahlung).map(({ f, vorschlag }) => {
                   const z = f.zahlung;
                   const st = STATUS[f.status];
                   return (
@@ -112,6 +125,8 @@ export function RecurringPage() {
         )}
       </div>
 
+      {due.length > 0 && <Vorschau jahr={year} due={due.map((d) => d.f)} />}
+
       {liste.length > 0 && (
         <div className="card">
           <div className="card-head"><h3>Alle wiederkehrenden Zahlungen</h3><span className="muted small">Zum Bearbeiten anklicken</span></div>
@@ -139,6 +154,37 @@ export function RecurringPage() {
       {check && <AbhakenDialog f={check.f} vorschlag={check.t} onClose={() => setCheck(null)} />}
       {eigen && <EigenbelegDialog initial={eigen.initial} onClose={() => setEigen(null)} onCreated={(id) => belegZuZahlung(eigen.f.zahlung!.id, id)} />}
       {view && <DocViewer id={view} onClose={() => setView(null)} />}
+    </div>
+  );
+}
+
+/** Monatsvorschau: was ist laut Tabelle wann fällig, was ist schon erledigt, was kommt noch. */
+function Vorschau({ jahr, due }: { jahr: number; due: Faelligkeit[] }) {
+  const betrag = (f: Faelligkeit) => {
+    const b = f.zahlung?.betrag_cent ?? f.betrag_cent ?? 0;
+    return f.r.richtung === 'aus' ? -b : b;
+  };
+  const monate = MONATE.map((_, i) => {
+    const m = due.filter((f) => f.monat === i + 1);
+    return { erwartet: m.reduce((s, f) => s + betrag(f), 0), offen: m.filter((f) => !f.zahlung).reduce((s, f) => s + betrag(f), 0) };
+  });
+  const summe = (k: 'erwartet' | 'offen') => monate.reduce((s, m) => s + m[k], 0);
+  const zelle = (c: number) => <td className={`num nowrap ${c < 0 ? 'neg' : c > 0 ? 'pos' : 'muted'}`}>{c ? formatEUR(c) : '–'}</td>;
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>Vorschau {jahr}</h3>
+        <span className="muted small">Noch offen: <strong>{formatEUR(summe('offen'))}</strong> von {formatEUR(summe('erwartet'))}</span>
+      </div>
+      <div className="table-wrap">
+        <table className="table compact forecast">
+          <thead><tr><th />{MONATE.map((m) => <th key={m} className="num">{m.slice(0, 3)}</th>)}<th className="num">Jahr</th></tr></thead>
+          <tbody>
+            <tr><th>Laut Tabelle</th>{monate.map((m, i) => <Fragment key={i}>{zelle(m.erwartet)}</Fragment>)}{zelle(summe('erwartet'))}</tr>
+            <tr><th>Noch offen</th>{monate.map((m, i) => <Fragment key={i}>{zelle(m.offen)}</Fragment>)}{zelle(summe('offen'))}</tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -251,7 +297,13 @@ function AbhakenDialog({ f, vorschlag, onClose }: { f: Faelligkeit; vorschlag: V
 
 type AmountRow = { key: number; ab_jahr: number; betrag_cent: number | null };
 
-function RecurringDialog({ r, onClose }: { r: Partial<RecurringView>; onClose: () => void }) {
+export function RecurringDialog({ r, onClose, onSaved, hinweis }: {
+  r: Partial<RecurringView>;
+  onClose: () => void;
+  /** Nach dem Speichern, z. B. um die auslösende Buchung abzuhaken */
+  onSaved?: (id: number) => void;
+  hinweis?: string;
+}) {
   const [v, setV] = useState<Partial<Recurring>>(r);
   const [rows, setRows] = useState<AmountRow[]>(() =>
     r.amounts?.length ? r.amounts.map((a) => ({ key: a.id, ab_jahr: a.ab_jahr, betrag_cent: a.betrag_cent })) : [{ key: -1, ab_jahr: new Date().getFullYear(), betrag_cent: null }]);
@@ -266,10 +318,19 @@ function RecurringDialog({ r, onClose }: { r: Partial<RecurringView>; onClose: (
     const p = id ? get<{ name: string; default_category_id: number | null }>('SELECT name, default_category_id FROM partners WHERE id = ?', [id]) : undefined;
     setV({ ...v, partner_id: id, category_id: v.category_id ?? p?.default_category_id ?? null, name: v.name || (p ? `${p.name} – Jahresbeitrag` : v.name) });
   };
-  const save = () => attempt(() => {
-    saveRecurring(v, rows.map((x) => ({ ab_jahr: Number(x.ab_jahr), betrag_cent: x.betrag_cent ?? 0 })));
+  const save = () => {
+    let id = 0;
+    const ok = attempt(() => {
+      id = saveRecurring(v, rows.map((x) => ({ ab_jahr: Number(x.ab_jahr), betrag_cent: x.betrag_cent ?? 0 })));
+    }, 'Gespeichert');
+    if (!ok) return;
+    if (onSaved) onSaved(id);
+    else if (!r.id) {
+      const n = abgleichSeitBeginn(id);
+      if (n) toast(n === 1 ? '1 passende Buchung automatisch abgehakt' : `${n} passende Buchungen automatisch abgehakt`, 'info');
+    }
     onClose();
-  }, 'Gespeichert');
+  };
   const remove = () => confirm(`„${r.name}" mit allen abgehakten Jahren löschen? Buchungen und Belege bleiben erhalten.`) && attempt(() => deleteRecurring(r.id!), 'Gelöscht') && onClose();
 
   return (
@@ -279,6 +340,7 @@ function RecurringDialog({ r, onClose }: { r: Partial<RecurringView>; onClose: (
       onClose={onClose}
       footer={<>{r.id && <button className="danger-outline" onClick={remove}>Löschen</button>}<button onClick={onClose}>Abbrechen</button><button className="primary" disabled={!v.name?.trim()} onClick={save}>Speichern</button></>}
     >
+      {hinweis && <p className="muted small">{hinweis}</p>}
       <div className="form-grid">
         <Field label="Zahlungspartner" span={2} hint="Für den automatischen Abgleich mit den Kontobewegungen">
           <Select value={v.partner_id ?? null} onChange={choosePartner} empty="– keiner –" options={partners} />

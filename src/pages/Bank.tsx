@@ -12,6 +12,8 @@ import { categories, categoryLabel, categoryOptions, memberName, memberOptions, 
 import { TransactionDocs } from '../components/Docs';
 import { QuickMemberDialog, QuickPartnerDialog } from '../components/QuickCreate';
 import { SetupByPayer } from './Setup';
+import { RecurringDialog } from './Recurring';
+import { ausBuchungUebernehmen, entwurfAusBuchung, wiederkehrendFuerBuchung } from '../lib/recurring';
 import { CalibrateDialog } from '../components/Calibrate';
 import { bulkClear, bulkSetCategory, bulkSetChecked, bulkSetPartner, similarWithoutPartner } from '../lib/bulk';
 import {
@@ -47,7 +49,7 @@ const STATUS: Record<TxStatus, { label: string; tone: 'ok' | 'warn' | 'bad' | 'i
   geprueft: { label: 'geprüft', tone: 'ok' },
 };
 
-type Row = Transaction & { allocs: (Allocation & { cat?: Category; mname?: string; pname?: string })[]; docs: number; status: TxStatus; belegFehlt: boolean };
+type Row = Transaction & { allocs: (Allocation & { cat?: Category; mname?: string; pname?: string })[]; docs: number; status: TxStatus; belegFehlt: boolean; wiederkehrend: boolean };
 
 function loadRows(year: number, accountId: number | null): Row[] {
   const txs = all<Transaction>(
@@ -69,10 +71,14 @@ function loadRows(year: number, accountId: number | null): Row[] {
     byTx.get(a.transaction_id)!.push({ ...a, cat: a.category_id ? cats.get(a.category_id) : undefined, mname: a.mname ?? undefined, pname: a.pname ?? undefined });
   }
   const docs = new Map(all<{ transaction_id: number; n: number }>('SELECT transaction_id, COUNT(*) AS n FROM documents WHERE transaction_id IS NOT NULL GROUP BY transaction_id').map((d) => [d.transaction_id, d.n]));
+  const wiederkehrend = new Set(all<{ transaction_id: number }>('SELECT transaction_id FROM recurring_payments WHERE transaction_id IS NOT NULL').map((x) => x.transaction_id));
   return txs.map((t) => {
     const a = byTx.get(t.id) ?? [];
     const d = docs.get(t.id) ?? 0;
-    return { ...t, allocs: a, docs: d, status: txStatus(t, a), belegFehlt: belegFehlt(a.filter((x) => x.cat?.beleg_pflicht).length, d, t.belege_vollstaendig) };
+    return {
+      ...t, allocs: a, docs: d, status: txStatus(t, a), wiederkehrend: wiederkehrend.has(t.id),
+      belegFehlt: belegFehlt(a.filter((x) => x.cat?.beleg_pflicht).length, d, t.belege_vollstaendig),
+    };
   });
 }
 
@@ -187,6 +193,7 @@ function TransactionList() {
                   <td className="nowrap">{formatDate(r.buchungsdatum)}</td>
                   <td>
                     <strong>{r.gegen_name || r.buchungstext || '–'}</strong>
+                    {r.wiederkehrend && <span className="muted" title="Wiederkehrende Zahlung"> ↻</span>}
                     <div className="muted small clamp">{r.verwendungszweck}</div>
                   </td>
                   <td className="small">
@@ -293,6 +300,8 @@ export function AssignDialog({ id, onClose }: { id: number; onClose: () => void 
   const [applySimilar, setApplySimilar] = useState(true);
   const similar = useQuery(() => (t ? similarWithoutPartner(t) : []), [t]);
   const iban = normalizeIBAN(t?.gegen_iban);
+  const wk = useQuery(() => wiederkehrendFuerBuchung(id), [id]);
+  const [recurring, setRecurring] = useState(false);
   const ruleExists = useQuery(() => (iban ? !!scalar('SELECT 1 FROM rules WHERE iban = ?', [iban]) : false), [iban]);
 
   if (!t) return null;
@@ -472,8 +481,28 @@ export function AssignDialog({ id, onClose }: { id: number; onClose: () => void 
           <h3>Notiz</h3>
           <TextArea value={notiz ?? t.notiz} onChange={setNotiz} rows={3} />
           <Checkbox checked={geprueft ?? !!t.geprueft} onChange={setGeprueft} label="Zuordnung geprüft" />
+          <h3 className="mt">Wiederkehrend</h3>
+          {wk ? (
+            <p className="small">↻ Gehört zu <a href="#/wiederkehrend">„{wk.name}"</a> · {wk.jahr}</p>
+          ) : (
+            <>
+              <button className="link" onClick={() => setRecurring(true)}>↻ Als wiederkehrende Zahlung übernehmen …</button>
+              <div className="muted small">z. B. Verbandsbeitrag, Hosting, Versicherung – erscheint dann jedes Jahr in der Vorschau</div>
+            </>
+          )}
         </div>
       </div>
+      {recurring && (
+        <RecurringDialog
+          r={entwurfAusBuchung(t, { category_id: current.find((l) => l.category_id)?.category_id ?? null, partner_id: firstPartner })}
+          hinweis="Vorbelegt aus dieser Buchung – Rhythmus aus früheren Zahlungen desselben Zahlungspartners geschätzt."
+          onClose={() => setRecurring(false)}
+          onSaved={(rid) => {
+            const n = ausBuchungUebernehmen(rid, id);
+            toast(n ? `Übernommen – ${n} weitere passende ${n === 1 ? 'Buchung' : 'Buchungen'} abgehakt` : 'Als wiederkehrende Zahlung übernommen', 'ok');
+          }}
+        />
+      )}
     </Modal>
   );
 }

@@ -60,7 +60,7 @@ Beitragskonten werden ab einem einstellbaren Jahr geführt, damit beim Umstieg k
 
 **Belegpflicht:** Erwartet wird je belegpflichtiger Zuordnungszeile ein Beleg. Fehlend = belegpflichtig, nicht als „Alle Belege erfasst“ markiert und weniger Belege als Zeilen.
 
-**Wiederkehrende Zahlungen:** Betrag je Fälligkeit aus dem letzten Eintrag „ab Jahr“ ≤ Jahr. Vorschlag einer Buchung: richtige Richtung, Buchungsdatum 4 Monate vor bis 7 Monate nach Fälligkeit, Partner per Zuordnung, IBAN oder Name, noch keiner Fälligkeit zugeordnet; exakter Betrag zuerst, dann Nähe zum Fälligkeitsmonat.
+**Wiederkehrende Zahlungen:** Betrag je Fälligkeit aus dem letzten Eintrag „ab Jahr“ ≤ Jahr. Vorschlag einer Buchung: richtige Richtung, Buchungsdatum 4 Monate vor bis 7 Monate nach Fälligkeit, Partner per Zuordnung, IBAN oder Name, noch keiner Fälligkeit zugeordnet; exakter Betrag zuerst, dann Nähe zum Fälligkeitsmonat. Rhythmus beim Übernehmen aus einer Buchung: Median der Abstände gleichartiger Zahlungen (≤ 45 Tage monatlich, ≤ 120 vierteljährlich, ≤ 230 halbjährlich, sonst jährlich). Automatisches Abhaken nur bei exaktem Betrag und Nähe zum üblichen Zahltag (halber Rhythmus + 16 Tage).
 
 **GuV:** Summe der Zuordnungen je Kategorie nach Buchungsdatum (Zuflussprinzip), gegliedert nach steuerlichem Bereich. Neutrale Kategorien und nicht zugeordnete Beträge erscheinen getrennt. Abstimmung: Kontostand Anfang + Ergebnis + neutral + nicht zugeordnet = Kontostand Ende (berechnet), Vergleich mit Kontostand laut Auszug.
 

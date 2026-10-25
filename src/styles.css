@@ -480,3 +480,4 @@ main { padding: 26px 32px 60px; max-width: 1400px; }
 .warn-text { color: var(--warn); font-weight: 600; }
 .table.compact td, .table.compact th { padding: 4px 6px; }
 .actions-cell { white-space: nowrap; text-align: right; }
+.forecast th { font-weight: 600; white-space: nowrap; }

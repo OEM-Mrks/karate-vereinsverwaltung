@@ -5,7 +5,11 @@ import { all, createNew, get, run, scalar, setSqlJs } from '../src/db/db';
 import { setAllocations } from '../src/lib/bank';
 import { belegFehlt, fehlendeBelege, setBelegeVollstaendig } from '../src/lib/docs';
 import { eigenbelegAusBuchung, eigenbelegSpeichern } from '../src/lib/eigenbeleg';
-import { abhaken, betragFuer, faelligkeiten, faelligMonat, saveRecurring, vorschlaege } from '../src/lib/recurring';
+import type { Transaction } from '../src/db/schema';
+import {
+  abhaken, ausBuchungUebernehmen, betragFuer, entwurfAusBuchung, faelligkeiten, faelligMonat, rhythmusErkennen, saveRecurring, vorschlaege,
+  wiederkehrendFuerBuchung,
+} from '../src/lib/recurring';
 
 let acc = 0;
 const cat = (nr: string) => scalar<number>('SELECT id FROM categories WHERE nummer = ?', [nr])!;
@@ -100,5 +104,46 @@ describe('Wiederkehrende Zahlungen', () => {
     expect(faelligkeiten(2026, '2026-04-01').map((f) => [f.r.name, f.monat, f.status])).toEqual([['B', 1, 'ueberfaellig'], ['B', 7, 'offen']]);
     expect(() => saveRecurring({ name: 'C' }, [])).toThrow();
     expect(all('SELECT * FROM recurring')).toHaveLength(2);
+  });
+});
+
+describe('Aus einer Buchung übernehmen', () => {
+  const tx = (id: number) => get<Transaction>('SELECT * FROM transactions WHERE id = ?', [id])!;
+
+  it('erkennt monatliche Zahlungen (Ionos), legt sie an und hakt alle passenden Monate ab', () => {
+    const iban = 'DE89370400440532013000';
+    const ids = Array.from({ length: 10 }, (_, i) => addTx(`2026-${String(i + 1).padStart(2, '0')}-05`, -1200, 'IONOS SE', iban));
+    addTx('2026-06-20', -1200, 'IONOS SE', iban); // Zusatzbuchung im Juni, nicht doppelt abhaken
+    const p = run("INSERT INTO partners(name, iban, default_category_id) VALUES ('IONOS', ?, ?)", [iban, cat('6810')]);
+    const t = tx(ids[9]);
+    expect(rhythmusErkennen(t)).toBe('monatlich');
+    const e = entwurfAusBuchung(t, { category_id: null, partner_id: p });
+    expect(e).toMatchObject({ name: 'IONOS', rhythmus: 'monatlich', faellig_monat: 1, category_id: cat('6810'), richtung: 'aus' });
+    expect(e.amounts).toEqual([expect.objectContaining({ ab_jahr: 2026, betrag_cent: 1200 })]);
+
+    const r = saveRecurring(e, e.amounts!);
+    const weitere = ausBuchungUebernehmen(r, t.id);
+    expect(weitere).toBe(9);
+    expect(wiederkehrendFuerBuchung(t.id)).toMatchObject({ recurring_id: r, jahr: 2026, periode: 10 });
+    const f = faelligkeiten(2026, '2026-10-25');
+    expect(f.filter((x) => x.zahlung).map((x) => x.monat)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(f.filter((x) => !x.zahlung).map((x) => x.status)).toEqual(['offen', 'offen']);
+    // jeder Monat mit seiner eigenen Buchung
+    expect(f.filter((x) => x.zahlung).map((x) => x.zahlung!.bezahlt_am)).toEqual(ids.map((i) => tx(i).buchungsdatum));
+    // Buchungen bekommen Kategorie und Partner
+    expect(scalar('SELECT COUNT(*) FROM allocations WHERE partner_id = ? AND category_id = ?', [p, cat('6810')])).toBe(10);
+  });
+
+  it('jährliche Zahlung mit anderem Betrag wird nicht automatisch abgehakt', () => {
+    const a = addTx('2025-02-15', -24000, 'Landesverband', 'DE02500105170137075030');
+    const b = addTx('2026-02-14', -25500, 'Landesverband', 'DE02500105170137075030');
+    expect(rhythmusErkennen(tx(b))).toBe('jaehrlich');
+    const e = entwurfAusBuchung(tx(b), { category_id: cat('6420'), partner_id: null });
+    expect(e.faellig_monat).toBe(2);
+    const r = saveRecurring({ ...e, name: 'Landesverband' }, [{ ab_jahr: 2025, betrag_cent: 24000 }, { ab_jahr: 2026, betrag_cent: 25500 }]);
+    // ohne Partner: Abgleich über Kategorie + Betrag – 2025 hat noch keine Kategorie, wird also nicht gefunden
+    expect(ausBuchungUebernehmen(r, b)).toBe(0);
+    expect(wiederkehrendFuerBuchung(b)?.jahr).toBe(2026);
+    expect(wiederkehrendFuerBuchung(a)).toBeUndefined();
   });
 });
