@@ -5,6 +5,10 @@ Keine Cloud, kein Server, kein Konto. Alle Daten liegen in einer SQLite-Datei, d
 
 ## Funktionen
 
+**Übersicht und Vorstandsbericht**
+- Kennzahlen auf einen Blick, offene Aufgaben
+- **Vorstandsbericht als PDF** mit einem Klick: Kontostand, Ergebnis, Einnahmen/Ausgaben (laufendes Jahr, Vorjahr gleicher Zeitraum, Vorjahr gesamt), Mitgliederstatistik (aktiv, minderjährig, Ehrenmitglieder, Ein-/Austritte, vorliegende Kündigungen, Beitragsgruppen), Beitragsstand und Rückstände, **Prognose des Kontostands zum 31.12.** aus ausstehenden Beiträgen und wiederkehrenden Zahlungen, Kategorien im Vorjahresvergleich, offene Punkte der Kassenführung – ohne Namen; säumige Mitglieder auf Wunsch namentlich (vertraulich)
+
 **Mitglieder**
 - Vollständige Stammdaten: Anschrift, E-Mail, Telefon, Handy, Geburtsdatum, Erziehungsberechtigte, Bankverbindung, SEPA-Mandat
 - Graduierung von *ohne Graduierung* über 9. Kyu bis 5. Dan, mit Prüfungshistorie
@@ -12,7 +16,7 @@ Keine Cloud, kein Server, kein Konto. Alle Daten liegen in einer SQLite-Datei, d
 - Anlegen schon mit dem Namen allein; die Liste **„Unvollständig“** zeigt, wo noch Angaben fehlen (Pflichtangaben einstellbar), Ergänzen mit „Speichern & nächstes“
 - **Frühestes Kündigungsdatum**: heute + 3 Monate zum Monatsende (Frist einstellbar), z. B. Kündigung am 25.10.2026 → Austritt 31.01.2027
 - Kündigungsbestätigung als druckfertiger Brief
-- **Mitgliederversammlung – Tagesordnung**: Checkliste mit Standardpunkten (Begrüßung, Beschlussfähigkeit, Berichte von Vorstand, Kassenwart und Kassenprüfern, Entlastung, Neuwahlen, Kassenprüferwahl, Mitgliedsbeiträge, Satzungsänderungen, Anträge, Verschiedenes …) zum Anhaken, eigene Punkte hinzufügen, Reihenfolge ändern, Erläuterungen; ablaufende Amtszeiten schlagen Neuwahlen vor. Daraus als PDF: **Einladung mit Tagesordnung** und **Protokollvorlage** mit Schreiblinien und Abstimmungsfeldern
+- **Mitgliederversammlung – Tagesordnung**: Checkliste mit Standardpunkten (Begrüßung, Beschlussfähigkeit, Berichte von Vorstand, Kassenwart und Kassenprüfern, Entlastung, Neuwahlen, Kassenprüferwahl, Mitgliedsbeiträge, Satzungsänderungen, Anträge, Verschiedenes …) zum Anhaken, eigene Punkte hinzufügen, Reihenfolge ändern, Erläuterungen; ablaufende Amtszeiten schlagen Neuwahlen vor. Daraus als PDF: **Einladung mit Tagesordnung** und **Protokollvorlage** mit Schreiblinien und Abstimmungsfeldern; in der Protokollvorlage stehen beim Bericht des Kassenwarts und der Kassenprüfer schon die Eckdaten des Berichtsjahres (Kontostände 01.01./31.12., Einnahmen, Ausgaben, Ergebnis, Mitgliederzahlen, Beitragsstand, Ergebnis der Kassenprüfung) – nur als Statistik, ohne Namen
 - **Mitgliederversammlung – Anwesenheitsliste** aller am Versammlungstag aktiven Mitglieder als PDF (Name, Anschrift, Telefon, optional E-Mail, Minderjährige gekennzeichnet) mit Unterschriftsspalte, Leerzeilen für Gäste und Feldern für Anwesende/Stimmberechtigte
 
 **Verein & Vorstand**

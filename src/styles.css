@@ -501,3 +501,4 @@ main { padding: 26px 32px 60px; max-width: 1400px; }
 @media (max-width: 720px) {
   .agenda-details { margin-left: 0; width: 100%; }
 }
+.mb { margin-bottom: 10px; }

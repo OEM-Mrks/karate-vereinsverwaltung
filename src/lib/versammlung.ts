@@ -16,7 +16,11 @@ export type VersammlungOptionen = {
   minderjaehrige: boolean;   // Minderjährige kennzeichnen (Stimmrecht laut Satzung prüfen)
   leerzeilen: number;        // für Gäste und Nachträge
   sortierung: 'name' | 'nr';
+  berichtsjahr?: number;     // Geschäftsjahr für Kassenbericht und Kassenprüfung (Standard: Vorjahr der Versammlung)
+  eckdaten?: boolean;        // Eckdaten aus der Buchhaltung in die Protokollvorlage übernehmen (Standard: ja)
 };
+
+export const berichtsjahrVon = (o: Pick<VersammlungOptionen, 'datum' | 'berichtsjahr'>) => o.berichtsjahr ?? Number(o.datum.slice(0, 4)) - 1;
 
 export type Teilnehmer = Member & { minderjaehrig: boolean };
 

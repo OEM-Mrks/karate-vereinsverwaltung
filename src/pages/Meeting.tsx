@@ -4,8 +4,9 @@ import { useLocalState, useQuery } from '../hooks';
 import { formatDate, todayISO } from '../lib/format';
 import { anwesenheitslistePdf, einladungPdf, protokollPdf } from '../lib/pdfDocs';
 import { getVereinsdaten } from '../lib/verein';
+import { jahresbericht } from '../lib/kennzahlen';
 import {
-  ladeTagesordnung, punktHinzufuegen, speichereTagesordnung, teilnehmer, tops, verschieben, verwerfeTagesordnung,
+  berichtsjahrVon, ladeTagesordnung, punktHinzufuegen, speichereTagesordnung, teilnehmer, tops, verschieben, verwerfeTagesordnung,
   type Tagesordnung, type TopPunkt, type VersammlungOptionen,
 } from '../lib/versammlung';
 import { PdfPreview } from '../components/PdfPreview';
@@ -50,6 +51,9 @@ export function MeetingPage() {
           <Field label="Datum" hint="Stichtag für die Anwesenheitsliste"><DateInput value={o.datum} onChange={(v) => set('datum')(v ?? todayISO())} /></Field>
           <Field label="Uhrzeit"><TextInput value={o.uhrzeit} onChange={set('uhrzeit')} placeholder="z. B. 19:00" /></Field>
           <Field label="Ort" span={2}><TextInput value={o.ort} onChange={set('ort')} placeholder="z. B. Vereinsheim, Sporthalle …" /></Field>
+          <Field label="Berichtsjahr" hint="Geschäftsjahr für Kassenbericht und Kassenprüfung">
+            <TextInput type="number" value={String(berichtsjahrVon(o))} onChange={(v) => set('berichtsjahr')(Number(v) || undefined)} />
+          </Field>
         </div>
       </div>
 
@@ -57,7 +61,7 @@ export function MeetingPage() {
         <Tabs value={tab} onChange={setTab} tabs={[{ id: 'tagesordnung', label: 'Tagesordnung' }, { id: 'anwesenheit', label: 'Anwesenheitsliste' }]} />
       </div>
       {tab === 'tagesordnung'
-        ? <TagesordnungEditor o={o} onPdf={setPdf} />
+        ? <TagesordnungEditor o={o} set={set} onPdf={setPdf} />
         : <Anwesenheit o={o} set={set} onPdf={setPdf} />}
 
       {pdf && <PdfPreview title={pdf.title} filename={pdf.filename} build={pdf.build} onClose={() => setPdf(null)} />}
@@ -67,7 +71,11 @@ export function MeetingPage() {
 
 // ---------- Tagesordnung ----------
 
-function TagesordnungEditor({ o, onPdf }: { o: VersammlungOptionen; onPdf: (p: Pdf) => void }) {
+function TagesordnungEditor({ o, set, onPdf }: {
+  o: VersammlungOptionen;
+  set: <K extends keyof VersammlungOptionen>(k: K) => (v: VersammlungOptionen[K]) => void;
+  onPdf: (p: Pdf) => void;
+}) {
   const t = useQuery(() => ladeTagesordnung(o.datum), [o.datum]);
   const [neu, setNeu] = useState('');
   const [details, setDetails] = useState<string[]>([]);
@@ -91,8 +99,19 @@ function TagesordnungEditor({ o, onPdf }: { o: VersammlungOptionen; onPdf: (p: P
           </div>
           <div className="actions">
             <button disabled={!anzahl} onClick={() => onPdf({ title: 'Einladung', filename: `Einladung_Mitgliederversammlung_${o.datum}.pdf`, build: () => einladungPdf(o, t) })}>Einladung (PDF)</button>
-            <button disabled={!anzahl} onClick={() => onPdf({ title: 'Protokollvorlage', filename: `Protokoll_Mitgliederversammlung_${o.datum}.pdf`, build: () => protokollPdf(o, t) })}>Protokollvorlage (PDF)</button>
+            <button disabled={!anzahl} onClick={() => onPdf({
+              title: 'Protokollvorlage',
+              filename: `Protokoll_Mitgliederversammlung_${o.datum}.pdf`,
+              build: () => protokollPdf(o, t, o.eckdaten === false ? undefined : jahresbericht(berichtsjahrVon(o))),
+            })}>Protokollvorlage (PDF)</button>
           </div>
+        </div>
+        <div className="mb">
+          <Checkbox
+            checked={o.eckdaten !== false}
+            onChange={(v) => set('eckdaten')(v)}
+            label={<>Eckdaten {berichtsjahrVon(o)} in die Protokollvorlage übernehmen <span className="muted small">(Kontostände, Einnahmen/Ausgaben, Mitgliederzahlen, Beitragsstand, Kassenprüfung – ohne Namen)</span></>}
+          />
         </div>
         <ul className="agenda">
           {t.punkte.map((p, i) => {

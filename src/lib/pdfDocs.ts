@@ -10,8 +10,11 @@ import { formatDate, formatIBAN, todayISO } from './format';
 import { memberName } from './lookups';
 import { baseDoc, eur, FARBE, signatures, table } from './pdf';
 import type { Report, ReportLine } from './report';
-import { shiftYear } from './report';
+import { buildReport, shiftYear } from './report';
 import { getVereinsdaten, namesFor, signatory } from './verein';
+import type { Jahresbericht } from './kennzahlen';
+import { beitragsStatistik, datenstand, mitgliederStatistik, prognose, pruefungsStand } from './kennzahlen';
+import { MONATE } from './recurring';
 import type { Tagesordnung, Teilnehmer, VersammlungOptionen } from './versammlung';
 import { tops } from './versammlung';
 
@@ -344,7 +347,68 @@ export function einladungPdf(o: VersammlungOptionen, t: Tagesordnung): TDocument
   return baseDoc(`Einladung · ${titel}`, content, { letter: true });
 }
 
-export function protokollPdf(o: VersammlungOptionen, t: Tagesordnung): TDocumentDefinitions {
+/** Kleine Kennzahlentabelle mit grauem Hintergrund (Label | Wert). */
+function eckdaten(titel: string, zeilen: [string, string][], fuss?: string): Content {
+  return {
+    table: {
+      widths: ['*'],
+      body: [[{
+        fillColor: FARBE.fill,
+        stack: [
+          { text: titel, bold: true, fontSize: 8.5, color: FARBE.muted, margin: [0, 0, 0, 3] },
+          {
+            table: { widths: [170, '*'], body: zeilen.map(([l, v]) => [{ text: l, color: FARBE.muted }, { text: v }]) },
+            layout: { defaultBorder: false, paddingTop: () => 1, paddingBottom: () => 1, paddingLeft: () => 0 },
+            fontSize: 8.5,
+          },
+          ...(fuss ? [{ text: fuss, fontSize: 7.5, color: FARBE.muted, margin: [0, 3, 0, 0] } as Content] : []),
+        ],
+      }]],
+    },
+    layout: { defaultBorder: false, paddingTop: () => 6, paddingBottom: () => 6, paddingLeft: () => 8, paddingRight: () => 8 },
+    margin: [0, 4, 0, 2],
+  };
+}
+
+const plural = (n: number, eins: string, mehr: string) => `${n} ${n === 1 ? eins : mehr}`;
+
+/** Eckpunkte für den Bericht des Kassenwarts – nur Statistik, keine Namen. */
+export function kassenberichtDaten(d: Jahresbericht): Content {
+  const { report: r, mitglieder: m, beitraege: b } = d;
+  const bis = formatDate(r.bis);
+  return eckdaten(`Eckdaten Geschäftsjahr ${r.jahr}${r.ganzesJahr ? '' : ` (Stand ${bis})`}`, [
+    [`Kontostand ${formatDate(r.von)}`, eur(r.kontoAnfang)],
+    ['Einnahmen', eur(r.summeEin)],
+    ['Ausgaben', eur(r.summeAus)],
+    [r.ganzesJahr ? 'Jahresergebnis' : 'Ergebnis bisher', eur(r.ergebnis)],
+    ...(r.summeNeutral || r.unzugeordnet.summe ? [['Neutrale/nicht zugeordnete Buchungen', eur(r.summeNeutral + r.unzugeordnet.summe)] as [string, string]] : []),
+    [`Kontostand ${bis}`, eur(r.kontoEnde)],
+    [`Aktive Mitglieder ${bis}`, `${m.aktiv}${m.minderjaehrig ? ` (davon ${m.minderjaehrig} minderjährig)` : ''}`],
+    ['Ehrenmitglieder', String(m.ehrenmitglieder)],
+    [`Eintritte / Austritte ${r.jahr}`, `${m.eintritte} / ${m.austritte}`],
+    ['Vorliegende Kündigungen', m.kuendigungen ? `${plural(m.kuendigungen, 'Mitglied scheidet', 'Mitglieder scheiden')} zum Stichtag oder später aus` : 'keine'],
+    ['Mitgliedsbeiträge Soll / bezahlt', `${eur(b.soll)} / ${eur(b.bezahlt)}`],
+    ['Beitragsrückstände', b.mitRueckstand ? `${plural(b.mitRueckstand, 'Mitglied', 'Mitglieder')}, zusammen ${eur(b.ueberfaellig)}` : 'keine – alle fälligen Beiträge sind bezahlt'],
+    ...(r.fehlendeBelege ? [['Buchungen ohne vollständige Belege', String(r.fehlendeBelege)] as [string, string]] : []),
+  ], 'Automatisch aus der Vereinsverwaltung erzeugt – Mitgliederangaben nur als Anzahl, ohne Namen.');
+}
+
+/** Eckpunkte für den Bericht der Kassenprüfer. */
+export function pruefberichtDaten(d: Jahresbericht): Content {
+  const p = d.pruefung;
+  if (!p.vorhanden) return eckdaten(`Kassenprüfung ${p.jahr}`, [['Stand', 'Für dieses Geschäftsjahr ist noch keine Kassenprüfung erfasst.']]);
+  return eckdaten(`Kassenprüfung ${p.jahr}`, [
+    ['Prüfung am', p.pruefdatum ? formatDate(p.pruefdatum) : '–'],
+    ...(p.pruefer.length ? [['Kassenprüfer/innen', p.pruefer.join(', ')] as [string, string]] : []),
+    ['Geprüfte Buchungen', `${p.geprueft} von ${p.gesamt}`],
+    ['Offene Rückfragen', p.offeneFragen ? String(p.offeneFragen) : 'keine'],
+    ...p.hinweise.map((h): [string, string] => [h.ok ? 'In Ordnung' : 'Hinweis', h.text]),
+    ...(p.feststellungen?.trim() ? [['Feststellungen', p.feststellungen.trim()] as [string, string]] : []),
+    ['Empfehlung', p.entlastung ? 'Entlastung des Vorstands' : 'keine Empfehlung zur Entlastung'],
+  ]);
+}
+
+export function protokollPdf(o: VersammlungOptionen, t: Tagesordnung, daten?: Jahresbericht): TDocumentDefinitions {
   const titel = o.titel || 'Mitgliederversammlung';
   const linien = (n: number): Content => ({
     canvas: Array.from({ length: n }, (_, i) => ({ type: 'line' as const, x1: 0, y1: 18 + i * 20, x2: 483, y2: 18 + i * 20, lineWidth: 0.3, lineColor: FARBE.line })),
@@ -371,7 +435,9 @@ export function protokollPdf(o: VersammlungOptionen, t: Tagesordnung): TDocument
       stack: [
         { text: `TOP ${p.nr}: ${p.titel}`, bold: true, fontSize: 10.5, margin: [0, 10, 0, 1] },
         ...(p.details.trim() ? [{ text: p.details.trim(), fontSize: 8, color: FARBE.muted } as Content] : []),
-        linien(p.abstimmung ? 3 : 4),
+        ...(daten && p.standard === 'bericht_kasse' ? [kassenberichtDaten(daten)] : []),
+        ...(daten && p.standard === 'bericht_pruefer' ? [pruefberichtDaten(daten)] : []),
+        linien(daten && (p.standard === 'bericht_kasse' || p.standard === 'bericht_pruefer') ? 2 : p.abstimmung ? 3 : 4),
         ...(p.abstimmung ? [{
           text: [
             { text: 'Abstimmung:  ', color: FARBE.muted },
@@ -387,4 +453,147 @@ export function protokollPdf(o: VersammlungOptionen, t: Tagesordnung): TDocument
     signatures(['Versammlungsleitung', 'Protokollführung']),
   ];
   return baseDoc(`Protokoll ${formatDate(o.datum)}`, content);
+}
+
+// ---------- Vorstandsbericht (Schnellbericht zum aktuellen Stand) ----------
+
+export function vorstandsberichtPdf(heute: string, opts: { mitNamen: boolean }): TDocumentDefinitions {
+  const jahr = Number(heute.slice(0, 4));
+  const vj = jahr - 1;
+  const lfd = buildReport(jahr, `${jahr}-01-01`, heute);
+  const vjGleich = buildReport(vj, `${vj}-01-01`, shiftYear(heute, -1));
+  const vjGesamt = buildReport(vj);
+  const mJetzt = mitgliederStatistik(heute);
+  const mVj = mitgliederStatistik(`${vj}-12-31`);
+  const bJetzt = beitragsStatistik(jahr, heute);
+  const bVj = beitragsStatistik(vj, `${vj}-12-31`);
+  const p = prognose(heute);
+  const pruefung = pruefungsStand(vj);
+  const ds = datenstand();
+
+  const kachel = (label: string, wert: string, sub: string, farbe?: string): TableCell => ({
+    stack: [
+      { text: label, fontSize: 7.5, color: FARBE.muted },
+      { text: wert, fontSize: 14, bold: true, color: farbe ?? FARBE.text, margin: [0, 2, 0, 1] },
+      { text: sub, fontSize: 7, color: FARBE.muted },
+    ],
+    fillColor: FARBE.fill,
+  });
+  const kacheln: Content = {
+    table: {
+      widths: ['*', '*', '*', '*'],
+      body: [[
+        kachel('Kontostand', eur(p.kontostand), `Stand ${formatDate(heute)}`),
+        kachel(`Ergebnis ${jahr}`, eur(lfd.ergebnis), `bis ${formatDate(heute)}`, lfd.ergebnis < 0 ? FARBE.accent : undefined),
+        kachel('Aktive Mitglieder', String(mJetzt.aktiv), `${mJetzt.eintritte} Eintritte · ${mJetzt.austritte} Austritte ${jahr}`),
+        kachel('Prognose 31.12.', eur(p.ende), 'voraussichtlicher Kontostand'),
+      ]],
+    },
+    layout: { hLineWidth: () => 0, vLineWidth: (i: number) => (i > 0 && i < 4 ? 6 : 0), vLineColor: () => '#ffffff', paddingTop: () => 7, paddingBottom: () => 7, paddingLeft: () => 8 },
+    margin: [0, 0, 0, 6],
+  };
+
+  const zeitraum = (r: Report) => `${formatDate(r.von).slice(0, 6)}–${formatDate(r.bis).slice(0, 6)}${r.jahr}`;
+  const finanzen = table(['', `${jahr} bis heute`, `${vj} gleicher Zeitraum`, `${vj} gesamt`], [
+    ['Kontostand zu Beginn', eur(lfd.kontoAnfang), eur(vjGleich.kontoAnfang), eur(vjGesamt.kontoAnfang)],
+    ['Einnahmen', eur(lfd.summeEin), eur(vjGleich.summeEin), eur(vjGesamt.summeEin)],
+    ['Ausgaben', eur(lfd.summeAus), eur(vjGleich.summeAus), eur(vjGesamt.summeAus)],
+    { total: ['Ergebnis', eur(lfd.ergebnis), eur(vjGleich.ergebnis), eur(vjGesamt.ergebnis)] },
+    ['Neutral / nicht zugeordnet', eur(lfd.summeNeutral + lfd.unzugeordnet.summe), eur(vjGleich.summeNeutral + vjGleich.unzugeordnet.summe), eur(vjGesamt.summeNeutral + vjGesamt.unzugeordnet.summe)],
+    { total: ['Kontostand am Ende', eur(lfd.kontoEnde), eur(vjGleich.kontoEnde), eur(vjGesamt.kontoEnde)] },
+  ], { widths: ['*', 90, 100, 90], numeric: [1, 2, 3] });
+
+  // Einnahmen und Ausgaben nach Kategorie (lfd. Jahr vs. Vorjahr gleicher Zeitraum)
+  const vjSumme = new Map<number, number>();
+  for (const b of vjGesamt.bloecke) for (const l of [...b.einnahmen, ...b.ausgaben]) vjSumme.set(l.category.id, l.summe);
+  const linien = (typ: 'einnahmen' | 'ausgaben') => lfd.bloecke.flatMap((b) => b[typ])
+    .filter((l) => l.summe || l.vorjahr)
+    .sort((a, b) => Math.abs(b.summe) - Math.abs(a.summe))
+    .map((l) => [`${l.category.nummer} ${l.category.name}`, eur(Math.abs(l.summe)), eur(Math.abs(l.vorjahr)), eur(Math.abs(vjSumme.get(l.category.id) ?? 0))]);
+  const kategorien = table(['Kategorie', `${jahr} bis heute`, `${vj} gleicher Zeitraum`, `${vj} gesamt`], [
+    { section: 'Einnahmen' }, ...linien('einnahmen'),
+    { section: 'Ausgaben' }, ...linien('ausgaben'),
+  ], { widths: ['*', 90, 100, 90], numeric: [1, 2, 3], fontSize: 8.5 });
+
+  const mitglieder = table(['', `Stand ${formatDate(heute)}`, `31.12.${vj}`], [
+    ['Aktive Mitglieder', String(mJetzt.aktiv), String(mVj.aktiv)],
+    ['davon minderjährig', String(mJetzt.minderjaehrig), String(mVj.minderjaehrig)],
+    ['Ehrenmitglieder', String(mJetzt.ehrenmitglieder), String(mVj.ehrenmitglieder)],
+    ['Eintritte im Jahr', String(mJetzt.eintritte), String(mVj.eintritte)],
+    ['Austritte im Jahr', String(mJetzt.austritte), String(mVj.austritte)],
+    ['Vorliegende Kündigungen (Austritt steht bevor)', String(mJetzt.kuendigungen), String(mVj.kuendigungen)],
+    ...mJetzt.gruppen.map((g) => [`Beitragsgruppe ${g.name}`, String(g.anzahl), String(mVj.gruppen.find((x) => x.name === g.name)?.anzahl ?? 0)]),
+  ], { widths: ['*', 90, 90], numeric: [1, 2] });
+
+  const beitraege = table(['', `${jahr} (Stand ${formatDate(heute)})`, `${vj}`], [
+    ['Beitragssoll des Jahres', eur(bJetzt.soll), eur(bVj.soll)],
+    ['Bezahlt', eur(bJetzt.bezahlt), eur(bVj.bezahlt)],
+    ['Noch ausstehend (inkl. noch nicht fällig)', eur(bJetzt.ausstehend), eur(bVj.ausstehend)],
+    { total: ['Überfällig (inkl. Vorjahre)', eur(bJetzt.ueberfaellig), eur(bVj.ueberfaellig)] },
+    ['Mitglieder mit Rückstand', String(bJetzt.mitRueckstand), String(bVj.mitRueckstand)],
+  ], { widths: ['*', 110, 90], numeric: [1, 2] });
+
+  const prognoseTab = table(['Voraussichtlicher Kontostand zum 31.12.' + jahr, 'Betrag'], [
+    [`Kontostand ${formatDate(heute)}`, eur(p.kontostand)],
+    ['+ noch ausstehende Mitgliedsbeiträge', eur(p.beitraege)],
+    ...(p.wiederkehrendEin ? [['+ erwartete regelmäßige Einnahmen', eur(p.wiederkehrendEin)]] : []),
+    ['− erwartete regelmäßige Ausgaben', eur(-p.wiederkehrendAus)],
+    { total: ['= Prognose Kontostand 31.12.', eur(p.ende)] },
+  ], { widths: ['*', 100], numeric: [1] });
+
+  const offenePunkte: string[] = [
+    ds.letzteBuchung ? `Datenstand: letzte Kontobewegung vom ${formatDate(ds.letzteBuchung)}` : 'Noch keine Kontobewegungen importiert',
+    ...(ds.nichtAbgeglichen.length ? [`Kontostand nicht abgeglichen: ${ds.nichtAbgeglichen.join(', ')}`] : []),
+    ...(ds.nichtZugeordnet ? [`${plural(ds.nichtZugeordnet, 'Buchung', 'Buchungen')} noch nicht zugeordnet`] : []),
+    ...(lfd.fehlendeBelege ? [`${plural(lfd.fehlendeBelege, 'Buchung', 'Buchungen')} ${jahr} ohne vollständige Belege`] : []),
+    pruefung.vorhanden
+      ? `Kassenprüfung ${vj}: ${pruefung.abgeschlossen ? 'abgeschlossen' : 'läuft'} – ${pruefung.geprueft} von ${pruefung.gesamt} Buchungen geprüft${pruefung.offeneFragen ? `, ${plural(pruefung.offeneFragen, 'offene Rückfrage', 'offene Rückfragen')}` : ''}`
+      : `Kassenprüfung ${vj}: noch nicht begonnen`,
+  ];
+
+  const content: Content[] = [
+    { text: 'Vorstandsbericht', style: 'h1' },
+    { text: `Stand ${formatDate(heute)} · Geschäftsjahr ${jahr} im Vergleich zum Vorjahr ${vj}`, style: 'sub' },
+    kacheln,
+    { text: 'Finanzen', style: 'h2' },
+    finanzen,
+    // Abschnitte nicht über Seiten hinweg trennen
+    { unbreakable: true, stack: [{ text: 'Mitglieder', style: 'h2' }, mitglieder] },
+    {
+      unbreakable: true,
+      stack: [
+        { text: 'Mitgliedsbeiträge', style: 'h2' },
+        beitraege,
+        opts.mitNamen && bJetzt.saeumige.length
+          ? { text: 'Rückstände nach Mitglied – vertraulich, nur für den Vorstand', bold: true, fontSize: 9, color: FARBE.accent, margin: [0, 8, 0, 4] }
+          : { text: bJetzt.mitRueckstand ? 'Ohne Namensnennung – Einzelheiten beim Kassenwart.' : 'Alle fälligen Beiträge sind bezahlt.', fontSize: 8, color: FARBE.muted, margin: [0, 4, 0, 0] },
+      ],
+    },
+    ...(opts.mitNamen && bJetzt.saeumige.length
+      ? [table(['Mitglied', 'Überfällig'], bJetzt.saeumige.map((x) => [x.name, eur(x.betrag)]), { widths: ['*', 90], numeric: [1], fontSize: 8.5 })]
+      : []),
+    {
+      unbreakable: true,
+      stack: [
+        { text: `Prognose bis 31.12.${jahr}`, style: 'h2' },
+        prognoseTab,
+        ...(p.offeneZahlungen.length ? [
+          { text: 'Noch offene regelmäßige Zahlungen', bold: true, fontSize: 9, margin: [0, 8, 0, 4] } as Content,
+          table(['Zahlung', 'Fällig', 'Betrag'], p.offeneZahlungen.map((z) => [
+            z.name, `${MONATE[z.monat - 1]}${z.ueberfaellig ? ' (überfällig)' : ''}`, eur(z.richtung === 'aus' ? -z.betrag : z.betrag),
+          ]), { widths: ['*', 110, 80], numeric: [2], fontSize: 8.5 }),
+        ] : []),
+        {
+          text: 'Die Prognose berücksichtigt nur noch ausstehende Mitgliedsbeiträge und die hinterlegten wiederkehrenden Zahlungen – unregelmäßige Ausgaben (Anschaffungen, Veranstaltungen …) sind nicht enthalten.',
+          fontSize: 7.5, color: FARBE.muted, margin: [0, 4, 0, 0],
+        },
+      ],
+    },
+    { text: `Einnahmen und Ausgaben nach Kategorie`, style: 'h2', pageBreak: 'before' },
+    { text: `${zeitraum(lfd)} im Vergleich zum Vorjahr`, style: 'sub' },
+    kategorien,
+    { text: 'Offene Punkte der Kassenführung', style: 'h2' },
+    { ul: offenePunkte, fontSize: 9 },
+  ];
+  return baseDoc(`Vorstandsbericht ${formatDate(heute)}`, content);
 }

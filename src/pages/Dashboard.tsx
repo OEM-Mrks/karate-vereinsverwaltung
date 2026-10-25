@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { all, getSetting, scalar } from '../db/db';
 import type { Account, Member } from '../db/schema';
 import { GRADES } from '../db/seed';
@@ -10,10 +11,14 @@ import { memberName } from '../lib/lookups';
 import { missingFields, requiredFields } from '../lib/completeness';
 import { officers } from '../lib/verein';
 import { faelligkeiten } from '../lib/recurring';
-import { PageHeader, Stat } from '../components/ui';
+import { Checkbox, PageHeader, Stat } from '../components/ui';
+import { PdfPreview } from '../components/PdfPreview';
+import { vorstandsberichtPdf } from '../lib/pdfDocs';
 
 export function Dashboard() {
   const today = todayISO();
+  const [bericht, setBericht] = useState(false);
+  const [mitNamen, setMitNamen] = useState(false);
   const year = new Date().getFullYear();
   const d = useQuery(() => {
     const members = all<Member>('SELECT * FROM members');
@@ -57,7 +62,21 @@ export function Dashboard() {
 
   return (
     <div className="page">
-      <PageHeader title="Übersicht" subtitle={`${getSetting('verein_name')} · Stand ${formatDate(today)}`} />
+      <PageHeader
+        title="Übersicht"
+        subtitle={`${getSetting('verein_name')} · Stand ${formatDate(today)}`}
+        actions={<button className="primary" onClick={() => setBericht(true)}>Vorstandsbericht (PDF)</button>}
+      />
+      {bericht && (
+        <PdfPreview
+          title={`Vorstandsbericht ${formatDate(today)}`}
+          filename={`Vorstandsbericht_${today}.pdf`}
+          build={() => vorstandsberichtPdf(today, { mitNamen })}
+          deps={[mitNamen]}
+          options={<Checkbox checked={mitNamen} onChange={setMitNamen} label="Säumige Mitglieder namentlich aufführen (vertraulich)" />}
+          onClose={() => setBericht(false)}
+        />
+      )}
       <div className="stats">
         <Stat label="Aktive Mitglieder" value={d.active.length} sub={`${d.recentJoins} Eintritte ${year}`} onClick={() => navigate('mitglieder')} />
         <Stat
