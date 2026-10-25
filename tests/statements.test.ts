@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { all, createNew, run, scalar, setSqlJs } from '../src/db/db';
 import type { Account } from '../src/db/schema';
 import { balanceAt } from '../src/lib/bank';
-import { deleteStatementsOfYear, missingMonths, parseStatementText, resortStatements, saveStatement, statementMonth } from '../src/lib/statements';
+import { deleteStatementsOfYear, missingMonths, parseStatementFilename, parseStatementText, resortStatements, saveStatement, statementMonth, withFilename } from '../src/lib/statements';
 
 describe('Kontoauszug auslesen', () => {
   it('Sparkasse-Stil: "Kontostand am …"', () => {
@@ -67,6 +67,40 @@ Kontostand am 31.12.2025 4.123,45
 02.01.2026 Gutschrift 216,00
 Kontostand am 31.01.2026 4.339,45`;
     expect(parseStatementText(text)).toMatchObject({ von: '2026-01-01', bis: '2026-01-31', saldo_alt_cent: 412345, saldo_neu_cent: 433945 });
+  });
+
+  it('Sparkasse-Layout: Entgelt- und Abrechnungszeiträume bestimmen nicht den Monat', () => {
+    // Aufbau wie ein echter Sparkasse-Auszug (Postfach-Download), Namen und Beträge erfunden
+    const text = `S Stadt-Sparkasse
+Kontoauszug 2/2026 (Duplikat)
+Girokonto 12345678, DE02 1203 0000 0000 2020 51, Karateverein e.V.
+1. März 2026
+Seite 1 von 2
+Datum Erläuterung Betrag Soll EUR Betrag Haben EUR
+Kontostand am 30.01.2026, Auszug Nr. 1 6.013,93
+02.02.2026 GutschriftÜberweisung
+Max Mustermann Monatsbeitrag
+10,00
+27.02.2026 Abschluss
+Entgelte vom 31.12.2025 bis 30.01.2026 16,20-
+Kontostand am 27.02.2026 um 20:05 Uhr 5.657,62
+Abrechnungszeitraum vom 01.10.2025 bis 31.12.2025
+Kontostand in EUR am 31.12.2025 6.367,78 +`;
+    const i = parseStatementText(text);
+    expect(i).toMatchObject({ nummer: '2/2026', saldo_neu_cent: 565762, bis: '2026-02-27' });
+    expect(statementMonth(i)).toEqual({ jahr: 2026, monat: 2 });
+  });
+
+  it('Monat des Zeitraums = Monat mit den meisten Tagen', () => {
+    expect(statementMonth({ von: '2025-12-31', bis: '2026-01-30' })).toEqual({ jahr: 2026, monat: 1 });
+    expect(statementMonth({ von: '2026-05-30', bis: '2026-06-30' })).toEqual({ jahr: 2026, monat: 6 });
+  });
+
+  it('Dateiname aus dem Sparkasse-Postfach', () => {
+    expect(parseStatementFilename('Konto_0091102434-Auszug_2026_0002.pdf')).toEqual({ jahr: 2026, nummer: '2/2026' });
+    const leer = { iban: null, nummer: null, von: null, bis: null, saldo_alt_cent: null, saldo_neu_cent: null };
+    expect(statementMonth(withFilename(leer, 'Konto_1-Auszug_2026_0003.pdf'))).toEqual({ jahr: 2026, monat: 3 });
+    expect(parseStatementFilename('scan.pdf')).toBeNull();
   });
 
   it('liefert null bei unbekanntem Inhalt (z. B. gescanntes PDF)', () => {

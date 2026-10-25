@@ -8,7 +8,7 @@ import { formatDate, formatEUR, formatIBAN } from '../lib/format';
 import { pdfText } from '../lib/pdftext';
 import {
   deleteStatement, deleteStatementsOfYear, findAccountForIban, resortStatements, listStatements, missingMonths, parseStatementText, saveStatement, statementBlobUrl, statementMonth,
-  updateStatement, type SaveStatementResult, type StatementInfo, type StatementMeta,
+  updateStatement, withFilename, type SaveStatementResult, type StatementInfo, type StatementMeta,
 } from '../lib/statements';
 import { DocViewer } from '../components/Docs';
 import { attempt, Badge, DateInput, Empty, Field, Modal, MoneyInput, PageHeader, Select, TextInput, toast, YearSelect } from '../components/ui';
@@ -61,6 +61,9 @@ export function StatementsPage() {
             console.warn('PDF konnte nicht gelesen werden', e);
           }
         }
+        // Dateiname der Sparkasse („…-Auszug_2026_0002.pdf“) ergänzt Auszugsnummer bzw. Monat
+        info = withFilename(info, file.name);
+        erkannt ||= !!info.bis;
         const acc = findAccountForIban(info.iban) ?? account;
         const period = statementMonth(info);
         const p: Pending = {

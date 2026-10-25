@@ -10,3 +10,5 @@ dist
 !testdata/*.csv
 .claude/
 *.tsbuildinfo
+# Lokale Tests mit echten Kontoauszügen – enthalten Pfade/Daten, niemals einchecken
+tests/local-*.test.ts

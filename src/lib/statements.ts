@@ -26,9 +26,9 @@ function amount(raw: string, sign?: string): number | null {
  * Liest typische Angaben aus dem Text eines Kontoauszugs (Sparkasse, Volksbank, DKB, ING u. a.):
  * IBAN, Auszugsnummer, Zeitraum, alter und neuer Kontostand. Fehlende Angaben bleiben null.
  *
- * Reihenfolge für den Zeitraum: ausdrücklicher Zeitraum („01.03.2026 bis 31.03.2026“) → Monat, in dem die meisten
- * Buchungen liegen → späteste Kontostandsangabe → Auszugsnummer n/Jahr. Kontostände werden danach dem Zeitraum
- * zugeordnet: vor Beginn = alter, ab Beginn = neuer Kontostand.
+ * Reihenfolge für den Zeitraum: zwischen erstem und letztem „Kontostand am …“ → Monat, in dem die meisten
+ * Buchungen liegen → ausdrücklicher Zeitraum (ohne Entgelt-/Abrechnungszeiträume) → Auszugsnummer n/Jahr.
+ * Kontostände werden danach dem Zeitraum zugeordnet: vor Beginn = alter, ab Beginn = neuer Kontostand.
  */
 export function parseStatementText(text: string): StatementInfo {
   const t = text.replace(/\u00a0/g, ' ');
@@ -41,28 +41,21 @@ export function parseStatementText(text: string): StatementInfo {
   const nummer = nrM ? (nrM[2] ? `${Number(nrM[1])}/${nrM[2]}` : String(Number(nrM[1]))) : null;
   const nrJahr = nrM?.[2] ? Number(nrM[2]) : null;
 
-  // 1. Ausdrücklicher Zeitraum – nur plausible Spannen (1 Woche bis 4 Monate), damit keine Buchungszeilen greifen
-  let von: string | null = null;
-  let bis: string | null = null;
-  for (const m of t.matchAll(/(\d{1,2}\.\d{1,2}\.\d{2,4})\s*(?:bis|-|–|—)\s*(\d{1,2}\.\d{1,2}\.\d{2,4})/g)) {
-    const a = parseDate(m[1]);
-    const b = parseDate(m[2]);
-    if (!a || !b) continue;
-    const tage = (fromISO(b).getTime() - fromISO(a).getTime()) / 86_400_000;
-    if (tage >= 6 && tage <= 125) {
-      von = a;
-      bis = b;
-      break;
-    }
-  }
-
-  // Kontostandsangaben mit Datum; der Betrag darf auch am Anfang der nächsten Zeile stehen
+  // Kontostandsangaben mit Datum („Kontostand am 30.01.2026, Auszug Nr. 1 6.013,93“); der Betrag darf auch am Anfang
+  // der nächsten Zeile stehen. Zusammenfassungen wie „Kontostand in EUR am …“ (Rechnungsabschluss) zählen bewusst nicht.
   const datedRe = new RegExp(String.raw`(?:Kontostand|Saldo)\s+(?:am|per|zum|vom)\s+(\d{1,2}\.\d{1,2}\.\d{2,4})[^\n]{0,60}?(?:\n\s*)?` + AMOUNT, 'gi');
   const dated = [...t.matchAll(datedRe)]
     .map((m) => ({ datum: parseDate(m[1]), saldo: amount(m[2], m[3]) }))
     .filter((d): d is { datum: string; saldo: number } => !!d.datum && d.saldo != null)
     .sort((a, b) => a.datum.localeCompare(b.datum));
 
+  let von: string | null = null;
+  let bis: string | null = null;
+  // 1. Zeitraum zwischen erstem (altem) und letztem (neuem) Kontostand – am zuverlässigsten
+  if (dated.length >= 2 && dated[0].datum < dated[dated.length - 1].datum) {
+    von = nextDay(dated[0].datum);
+    bis = dated[dated.length - 1].datum;
+  }
   // 2. Monat mit den meisten Buchungen (Zeilen, die mit einem Datum beginnen)
   if (!von) {
     const jahrHint = nrJahr ?? (dated.length ? Number(dated[dated.length - 1].datum.slice(0, 4)) : null);
@@ -79,10 +72,21 @@ export function parseStatementText(text: string): StatementInfo {
     const best = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))[0];
     if (best) setMonth(best[0]);
   }
-  // 3. Späteste Kontostandsangabe (bei mehreren: Zeitraum dazwischen)
-  if (!von && dated.length >= 2 && dated[0].datum < dated[dated.length - 1].datum) {
-    von = nextDay(dated[0].datum);
-    bis = dated[dated.length - 1].datum;
+  // 3. Ausdrücklicher Zeitraum – ohne Entgelt-/Abrechnungszeiträume, die sich auf andere Perioden beziehen
+  if (!von) {
+    for (const line of t.split('\n')) {
+      if (/entgelt|abrechnung|zins|rechnungsabschluss|gebühr/i.test(line)) continue;
+      const m = line.match(/(\d{1,2}\.\d{1,2}\.\d{2,4})\s*(?:bis|-|–|—)\s*(\d{1,2}\.\d{1,2}\.\d{2,4})/);
+      const a = m ? parseDate(m[1]) : null;
+      const b = m ? parseDate(m[2]) : null;
+      if (!a || !b) continue;
+      const tage = (fromISO(b).getTime() - fromISO(a).getTime()) / 86_400_000;
+      if (tage >= 6 && tage <= 125) {
+        von = a;
+        bis = b;
+        break;
+      }
+    }
   }
   // 4. Auszugsnummer n/Jahr bei monatlichen Auszügen
   if (!von && nrM?.[2] && Number(nrM[1]) >= 1 && Number(nrM[1]) <= 12 && !dated.length) {
@@ -112,6 +116,27 @@ export function parseStatementText(text: string): StatementInfo {
   return { iban, nummer, von, bis, saldo_alt_cent: alt, saldo_neu_cent: neu };
 }
 
+/** Sparkasse-Postfach: „Konto_0091102434-Auszug_2026_0002.pdf“ → Jahr 2026, Auszug Nr. 2. */
+export function parseStatementFilename(name: string): { jahr: number; nummer: string } | null {
+  const m = name.match(/Auszug[_-](\d{4})[_-](\d{1,4})/i);
+  return m ? { jahr: Number(m[1]), nummer: `${Number(m[2])}/${m[1]}` } : null;
+}
+
+/** Ergänzt die Angaben aus dem Text um den Dateinamen (Auszugsnummer; Monat nur, wenn der Text nichts hergibt). */
+export function withFilename(info: StatementInfo, name: string): StatementInfo {
+  const f = parseStatementFilename(name);
+  if (!f) return info;
+  const out = { ...info, nummer: info.nummer ?? f.nummer };
+  if (!out.von && !out.bis) {
+    const n = Number(f.nummer.split('/')[0]);
+    if (n >= 1 && n <= 12) {
+      out.von = toISO(new Date(f.jahr, n - 1, 1));
+      out.bis = toISO(new Date(f.jahr, n, 0));
+    }
+  }
+  return out;
+}
+
 function nextDay(iso: string): string {
   const d = fromISO(iso);
   d.setDate(d.getDate() + 1);
@@ -126,6 +151,16 @@ export function dayBefore(iso: string): string {
 
 /** Jahr/Monat, unter dem der Auszug abgelegt wird: Monat des Zeitraum-Endes. */
 export function statementMonth(info: Pick<StatementInfo, 'von' | 'bis'>): { jahr: number; monat: number } | null {
+  if (info.von && info.bis && info.von <= info.bis) {
+    // Monat, der die meisten Tage des Zeitraums abdeckt (z. B. 31.12.–30.01. → Januar)
+    const tage = new Map<string, number>();
+    for (let d = fromISO(info.von); toISO(d) <= info.bis; d.setDate(d.getDate() + 1)) {
+      const k = toISO(d).slice(0, 7);
+      tage.set(k, (tage.get(k) ?? 0) + 1);
+    }
+    const best = [...tage.entries()].sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))[0][0];
+    return { jahr: Number(best.slice(0, 4)), monat: Number(best.slice(5, 7)) };
+  }
   const d = info.bis ?? info.von;
   if (!d) return null;
   return { jahr: Number(d.slice(0, 4)), monat: Number(d.slice(5, 7)) };
@@ -251,7 +286,7 @@ export async function resortStatements(accountId: number, extract: (bytes: Uint8
   const list = all<Statement>("SELECT * FROM statements WHERE account_id = ? AND erkannt = 1 AND mime = 'application/pdf'", [accountId]);
   const updates: { id: number; info: StatementInfo; jahr: number; monat: number }[] = [];
   for (const st of list) {
-    const info = parseStatementText(await extract(st.daten));
+    const info = withFilename(parseStatementText(await extract(st.daten)), st.dateiname);
     const ym = statementMonth(info);
     if (ym) updates.push({ id: st.id, info, ...ym });
   }
