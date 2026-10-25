@@ -12,3 +12,6 @@ dist
 *.tsbuildinfo
 # Lokale Tests mit echten Kontoauszügen – enthalten Pfade/Daten, niemals einchecken
 tests/local-*.test.ts
+
+# Demo-Video (HyperFrames-Projekt, Aufnahmen, Sprachdateien) – nicht einchecken
+demo-video/
