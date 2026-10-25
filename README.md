@@ -34,6 +34,12 @@ Keine Cloud, kein Server, kein Konto. Alle Daten liegen in einer SQLite-Datei, d
 
 - **Sammelbearbeitung**: Buchungen anhaken (z. B. nach Suche „Ionos“) und Lieferant, Kategorie oder „geprüft“ für alle auf einmal setzen; Filter „Ausgaben ohne Lieferant“; beim Zuordnen eines Lieferanten auf Wunsch auch alle weiteren Buchungen desselben Zahlungspartners ergänzen
 
+**Kontoauszüge**
+- Ablage der PDF-Kontoauszüge nach Jahr und Monat (Drag & Drop, mehrere Dateien auf einmal)
+- PDFs aus dem Online-Banking werden im Browser ausgelesen (pdf.js): Auszugsnummer, Zeitraum, alter und neuer Kontostand – der Auszug wird automatisch dem richtigen Monat zugeordnet
+- Erkannte Kontostände werden mit den Buchungen abgeglichen (✓ oder Differenz); fehlende Monate werden angezeigt
+- Gescannte Auszüge ohne Textebene legt man per Drop auf den gewünschten Monat ab
+
 **Kassenprüfung**
 - Beleg für Beleg am Bildschirm prüfen: Buchung links, PDF-Beleg rechts, abhaken mit Enter, Rückfragen mit Kommentar
 - Prüfprotokoll mit Antworten des Kassenwarts; Austausch per kleiner Protokolldatei, falls die Prüfer mit einer Kopie auf dem eigenen Rechner arbeiten

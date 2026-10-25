@@ -1,6 +1,6 @@
 // Datenbankschema (SQLite). Alle Geldbeträge in Cent (INTEGER), alle Datumswerte als ISO-Text (yyyy-mm-dd).
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -223,6 +223,27 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 CREATE INDEX IF NOT EXISTS idx_docs_tx ON documents(transaction_id);
 
+-- Kontoauszüge (PDF) je Konto, Jahr und Monat
+CREATE TABLE IF NOT EXISTS statements (
+  id             INTEGER PRIMARY KEY,
+  account_id     INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  jahr           INTEGER NOT NULL,
+  monat          INTEGER NOT NULL CHECK (monat BETWEEN 1 AND 12),
+  nummer         TEXT,             -- Auszugsnummer, z. B. 3/2026
+  von            TEXT,
+  bis            TEXT,
+  saldo_alt_cent INTEGER,          -- Kontostand vor dem Zeitraum
+  saldo_neu_cent INTEGER,          -- Kontostand am Ende des Zeitraums
+  dateiname      TEXT NOT NULL,
+  mime           TEXT NOT NULL,
+  groesse        INTEGER NOT NULL,
+  daten          BLOB NOT NULL,
+  erkannt        INTEGER NOT NULL DEFAULT 0,  -- Angaben automatisch aus dem PDF gelesen
+  notiz          TEXT,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_statements_period ON statements(account_id, jahr, monat);
+
 -- Kassenprüfung je Geschäftsjahr
 CREATE TABLE IF NOT EXISTS audits (
   id            INTEGER PRIMARY KEY,
@@ -319,6 +340,12 @@ export type Rule = {
   id: number; name: string; prioritaet: number; aktiv: number; iban: string | null; text_enthaelt: string | null;
   richtung: 'ein' | 'aus' | 'beide'; betrag_min_cent: number | null; betrag_max_cent: number | null;
   category_id: number | null; partner_id: number | null; member_id: number | null; treffer: number;
+};
+
+export type Statement = {
+  id: number; account_id: number; jahr: number; monat: number; nummer: string | null; von: string | null; bis: string | null;
+  saldo_alt_cent: number | null; saldo_neu_cent: number | null; dateiname: string; mime: string; groesse: number;
+  daten: Uint8Array; erkannt: number; notiz: string | null; created_at: string;
 };
 
 export type Audit = {

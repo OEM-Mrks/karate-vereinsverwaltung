@@ -443,3 +443,15 @@ main { padding: 26px 32px 60px; max-width: 1400px; }
 .link.strong { font-weight: 700; }
 .answer input { min-width: 180px; }
 @media (max-width: 900px) { .audit-grid { grid-template-columns: 1fr; } .audit-doc { position: static; } }
+
+/* ---------- Kontoauszüge ---------- */
+.month-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.month-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px; min-height: 96px; box-shadow: var(--shadow);
+}
+.month-card.has { border-color: color-mix(in srgb, var(--ok) 35%, var(--border)); }
+.month-card.missing { border-style: dashed; border-color: var(--warn); }
+.month-card.over { border-color: var(--accent); background: var(--accent-soft); }
+.month-head { display: flex; justify-content: space-between; align-items: center; }
+.statement-row { border-top: 1px solid var(--border); padding-top: 6px; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }

@@ -6,10 +6,15 @@ import { ACCEPT_DOCS, addDocument, documentBlobUrl, formatSize } from '../lib/do
 import { formatDate } from '../lib/format';
 import { attempt, Modal, toast } from './ui';
 
-export function DocViewer({ id, onClose }: { id: number; onClose: () => void }) {
+export function DocViewer({ id, onClose, load = documentBlobUrl }: {
+  id: number;
+  onClose: () => void;
+  /** Quelle der Datei – Standard: Belege; für Kontoauszüge eine andere Tabelle */
+  load?: (id: number) => { url: string; mime: string; name: string } | null;
+}) {
   const [doc, setDoc] = useState<{ url: string; mime: string; name: string } | null>(null);
   useEffect(() => {
-    const d = documentBlobUrl(id);
+    const d = load(id);
     setDoc(d);
     return () => {
       if (d) URL.revokeObjectURL(d.url);

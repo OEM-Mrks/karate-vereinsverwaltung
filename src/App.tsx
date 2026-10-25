@@ -14,6 +14,7 @@ import { CategoriesPage, PartnersPage, RulesPage } from './pages/MasterData';
 import { ReportPage } from './pages/Report';
 import { DataPage } from './pages/DataPage';
 import { AuditPage } from './pages/Audit';
+import { StatementsPage } from './pages/Statements';
 
 const NAV: { id: string; label: string; icon: string; group?: string }[] = [
   { id: 'uebersicht', label: 'Übersicht', icon: '◉' },
@@ -21,6 +22,7 @@ const NAV: { id: string; label: string; icon: string; group?: string }[] = [
   { id: 'beitraege', label: 'Beiträge', icon: '€' },
   { id: 'konto', label: 'Konto', icon: '🏦', group: 'Finanzen' },
   { id: 'import', label: 'CSV-Import', icon: '⇪' },
+  { id: 'auszuege', label: 'Kontoauszüge', icon: '🗂' },
   { id: 'belege', label: 'Belege', icon: '📄' },
   { id: 'guv', label: 'GuV', icon: '📊' },
   { id: 'kassenpruefung', label: 'Kassenprüfung', icon: '✓' },
@@ -51,6 +53,7 @@ function Shell({ onWiped }: { onWiped: () => void }) {
     case 'beitraege': content = <FeesPage />; break;
     case 'konto': content = <BankPage txId={id} />; break;
     case 'import': content = <ImportPage />; break;
+    case 'auszuege': content = <StatementsPage />; break;
     case 'belege': content = <DocumentsPage />; break;
     case 'guv': content = <ReportPage />; break;
     case 'kassenpruefung': content = <AuditPage />; break;

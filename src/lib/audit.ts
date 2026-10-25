@@ -4,6 +4,7 @@ import { all, get, run, scalar, tx } from '../db/db';
 import type { Audit, AuditCheck, Transaction } from '../db/schema';
 import { buildReport, type Report } from './report';
 import { isCalibrated } from './bank';
+import { missingMonths } from './statements';
 
 export type AuditItem = Transaction & {
   zuordnung: { kat: string | null; nummer: string | null; name: string | null; betrag_cent: number; beleg_pflicht: number }[];
@@ -98,6 +99,11 @@ export function auditSummary(audit: Audit, items: AuditItem[]): AuditSummary {
     } else {
       hinweise.push({ ok: false, text: `${k.account.name}: Kontostand 31.12. laut Kontoauszug noch nicht erfasst` });
     }
+  }
+  for (const k of report.konten) {
+    const fehlt = missingMonths(k.account.id, audit.jahr, `${audit.jahr + 1}-01-01`);
+    const namen = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+    hinweise.push({ ok: !fehlt.length, text: fehlt.length ? `${k.account.name}: Kontoauszüge fehlen für ${fehlt.map((m) => namen[m - 1]).join(', ')}` : `${k.account.name}: Kontoauszüge für alle Monate abgelegt` });
   }
   hinweise.push({ ok: report.unzugeordnet.anzahl === 0, text: report.unzugeordnet.anzahl ? `${report.unzugeordnet.anzahl} Buchungen sind nicht (vollständig) zugeordnet` : 'Alle Buchungen sind einer Kategorie zugeordnet' });
   hinweise.push({ ok: ohneBeleg === 0, text: ohneBeleg ? `${ohneBeleg} belegpflichtige Buchungen ohne Beleg` : 'Zu allen belegpflichtigen Buchungen liegt ein Beleg vor' });
