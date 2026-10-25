@@ -7,6 +7,8 @@ import { formatDate, formatEUR, todayISO, toISO } from '../lib/format';
 import { buildReport, reportToCSV, shiftYear, type ReportLine } from '../lib/report';
 import { Badge, DateInput, PageHeader, YearSelect } from '../components/ui';
 import { CalibrateDialog } from '../components/Calibrate';
+import { PdfPreview } from '../components/PdfPreview';
+import { guvPdf } from '../lib/pdfDocs';
 import { isCalibrated } from '../lib/bank';
 import { namesFor } from '../lib/verein';
 
@@ -41,6 +43,7 @@ export function ReportPage() {
   const [monat, setMonat] = useState(new Date().getMonth() + 1);
   const [frei, setFrei] = useState({ von: `${year}-01-01`, bis: todayISO() });
   const [checkpointFor, setCheckpointFor] = useState<Account | null>(null);
+  const [pdf, setPdf] = useState(false);
   const range = periodRange(year, period, monat, frei);
   const r = useQuery(() => buildReport(year, range.von, range.bis), [year, range.von, range.bis]);
   const zeitraum = r.ganzesJahr ? String(year) : `${formatDate(r.von)} – ${formatDate(r.bis)}`;
@@ -94,7 +97,8 @@ export function ReportPage() {
             </span>
           )}
           <button onClick={exportCsv}>CSV</button>
-          <button className="primary" onClick={() => window.print()}>Drucken / PDF</button>
+          <button onClick={() => window.print()}>Drucken</button>
+          <button className="primary" onClick={() => setPdf(true)}>📄 PDF erstellen</button>
         </>}
       />
 
@@ -221,6 +225,14 @@ export function ReportPage() {
           Trage den Kontostand laut Jahreskontoauszug ein, um fehlende oder doppelte Importe zu erkennen.
         </p>
       </div>
+      {pdf && (
+        <PdfPreview
+          title={`Gewinn- und Verlustrechnung ${zeitraum}`}
+          filename={`GuV_${r.ganzesJahr ? year : `${r.von}_${r.bis}`}.pdf`}
+          build={() => guvPdf(r, showPrev)}
+          onClose={() => setPdf(false)}
+        />
+      )}
       {checkpointFor && <CalibrateDialog account={checkpointFor} datum={r.bis} onClose={() => setCheckpointFor(null)} />}
       <div className="print-only signature">
         <div>Ort, Datum</div>

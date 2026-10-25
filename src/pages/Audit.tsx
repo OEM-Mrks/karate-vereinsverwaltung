@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getSetting } from '../db/db';
 import type { Audit } from '../db/schema';
-import { SPHAEREN } from '../db/schema';
 import { downloadBlob } from '../db/storage';
 import { useLocalState, useQuery } from '../hooks';
 import {
@@ -10,7 +8,8 @@ import {
 } from '../lib/audit';
 import { documentBlobUrl } from '../lib/docs';
 import { formatDate, formatEUR, formatIBAN, todayISO } from '../lib/format';
-import { escapeHtml, printHtml } from '../lib/print';
+import { auditPdf } from '../lib/pdfDocs';
+import { PdfPreview } from '../components/PdfPreview';
 import { getVereinsdaten, namesFor } from '../lib/verein';
 import { attempt, Badge, Checkbox, DateInput, Empty, Field, PageHeader, Select, Stat, Tabs, TextArea, TextInput, toast, YearSelect } from '../components/ui';
 
@@ -301,6 +300,7 @@ function ReportTab({ audit, items, summary }: { audit: Audit; items: AuditItem[]
     entlastung: !!audit.entlastung,
   });
   const [anlage, setAnlage] = useLocalState('audit.anlage', true);
+  const [pdf, setPdf] = useState(false);
   const save = (patch: Partial<typeof v>) => {
     const n = { ...v, ...patch };
     setV(n);
@@ -322,7 +322,7 @@ function ReportTab({ audit, items, summary }: { audit: Audit; items: AuditItem[]
         <Checkbox checked={anlage} onChange={setAnlage} label="Prüfprotokoll aller Buchungen als Anlage drucken" />
         <div className="actions mt">
           <button onClick={() => save({})}>Angaben speichern</button>
-          <button className="primary" onClick={() => { save({}); printAuditReport({ ...audit, ...v, entlastung: v.entlastung ? 1 : 0 }, items, summary, anlage); }}>Bericht drucken / als PDF</button>
+          <button className="primary" onClick={() => { save({}); setPdf(true); }}>📄 Bericht als PDF</button>
         </div>
       </div>
       <div className="card">
@@ -337,64 +337,14 @@ function ReportTab({ audit, items, summary }: { audit: Audit; items: AuditItem[]
           unter „Prüfprotokoll" und du übernimmst sie hier mit „Prüfvermerke importieren".
         </p>
       </div>
+      {pdf && (
+        <PdfPreview
+          title={`Bericht der Kassenprüfung ${audit.jahr}`}
+          filename={`Kassenpruefung_${audit.jahr}.pdf`}
+          build={() => auditPdf({ ...audit, ...v, entlastung: v.entlastung ? 1 : 0 }, items, summary, anlage)}
+          onClose={() => setPdf(false)}
+        />
+      )}
     </div>
   );
-}
-
-function printAuditReport(audit: Audit, items: AuditItem[], s: AuditSummary, anlage: boolean) {
-  const r = s.report;
-  const verein = getSetting('verein_name');
-  const pruefer = (audit.pruefer ?? '').split('\n').map((x) => x.trim()).filter(Boolean);
-  const eur = (c: number | null | undefined) => escapeHtml(formatEUR(c));
-  const fragen = items.filter((i) => i.check?.status === 'frage');
-  const konten = r.konten.map((k) => `<tr><td>${escapeHtml(k.account.name)}${k.account.iban ? `<br><small>${escapeHtml(formatIBAN(k.account.iban))}</small>` : ''}</td>
-    <td class="num">${eur(k.anfang)}</td><td class="num">${eur(k.ende)}</td>
-    <td class="num">${k.laut_auszug ? eur(k.laut_auszug.saldo_cent) : 'nicht erfasst'}</td>
-    <td class="num">${k.laut_auszug && k.ende != null ? (k.ende === k.laut_auszug.saldo_cent ? '✓ stimmt' : eur(k.ende - k.laut_auszug.saldo_cent)) : '–'}</td></tr>`).join('');
-  const bereiche = r.bloecke.filter((b) => b.summeEin || b.summeAus).map((b) => `<tr><td>${escapeHtml(SPHAEREN.find((x) => x.id === b.sphaere)?.name ?? b.name)}</td>
-    <td class="num">${eur(b.summeEin)}</td><td class="num">${eur(b.summeAus)}</td><td class="num">${eur(b.ergebnis)}</td></tr>`).join('');
-  const umfang = audit.umfang === 'alle' ? 'alle Buchungen des Geschäftsjahres' : audit.umfang === 'ausgaben' ? 'alle Ausgaben des Geschäftsjahres' : 'alle belegpflichtigen Buchungen';
-  const body = `
-    <div class="absender">${escapeHtml(verein)}</div>
-    <h1>Bericht der Kassenprüfung für das Geschäftsjahr ${audit.jahr}</h1>
-    <p>Die Prüfung fand am <b>${escapeHtml(formatDate(audit.pruefdatum))}</b>${audit.ort ? ` in ${escapeHtml(audit.ort)}` : ''} statt.
-       Geprüft haben: <b>${escapeHtml(pruefer.join(', ') || '–')}</b>.</p>
-    <h2>1. Umfang der Prüfung</h2>
-    <p>Geprüft wurden ${umfang} anhand der Kontoauszüge und der digital vorliegenden Belege.
-       ${s.geprueft} von ${s.gesamt} Buchungen wurden einzeln eingesehen und abgezeichnet${s.fragen ? `, zu ${s.fragen} Buchungen gab es Rückfragen` : ''}.
-       ${s.ohneBeleg ? `Bei ${s.ohneBeleg} belegpflichtigen Buchungen lag kein Beleg vor.` : 'Zu allen belegpflichtigen Buchungen lagen Belege vor.'}</p>
-    <h2>2. Kontenentwicklung</h2>
-    <table><thead><tr><th>Konto</th><th class="num">Stand 01.01.</th><th class="num">Stand 31.12. (Buchungen)</th><th class="num">laut Kontoauszug</th><th class="num">Abgleich</th></tr></thead>
-      <tbody>${konten}</tbody></table>
-    <p>Kontostand zu Beginn ${eur(r.kontoAnfang)} + Einnahmen ${eur(r.summeEin)} − Ausgaben ${eur(r.summeAus)}${r.summeNeutral ? ` ± neutrale Bewegungen ${eur(r.summeNeutral)}` : ''}${r.unzugeordnet.summe ? ` ± nicht zugeordnet ${eur(r.unzugeordnet.summe)}` : ''} = Kontostand am Ende ${eur(r.kontoEnde)}.</p>
-    <h2>3. Einnahmen und Ausgaben</h2>
-    <table><thead><tr><th>Bereich</th><th class="num">Einnahmen</th><th class="num">Ausgaben</th><th class="num">Ergebnis</th></tr></thead>
-      <tbody>${bereiche}<tr><td><b>Gesamt</b></td><td class="num"><b>${eur(r.summeEin)}</b></td><td class="num"><b>${eur(r.summeAus)}</b></td><td class="num"><b>${eur(r.ergebnis)}</b></td></tr></tbody></table>
-    <h2>4. Feststellungen</h2>
-    ${fragen.length ? `<table><thead><tr><th>Datum</th><th>Buchung</th><th class="num">Betrag</th><th>Rückfrage</th><th>Antwort</th></tr></thead><tbody>
-      ${fragen.map((i) => `<tr><td>${escapeHtml(formatDate(i.buchungsdatum))}</td><td>${escapeHtml(i.gegen_name || i.buchungstext)}</td><td class="num">${eur(i.betrag_cent)}</td>
-        <td>${escapeHtml(i.check?.kommentar)}</td><td>${escapeHtml(i.check?.antwort || 'offen')}</td></tr>`).join('')}</tbody></table>` : ''}
-    <p>${audit.feststellungen?.trim()
-      ? escapeHtml(audit.feststellungen).replace(/\n/g, '<br>')
-      : s.offeneFragen
-        ? 'Die oben aufgeführten offenen Rückfragen sind noch zu klären.'
-        : 'Die Prüfung ergab keine Beanstandungen. Die Kasse wurde ordnungsgemäß und nachvollziehbar geführt.'}</p>
-    ${audit.entlastung ? '<p><b>Die Kassenprüfer empfehlen der Mitgliederversammlung die Entlastung des Vorstands für das Geschäftsjahr ' + audit.jahr + '.</b></p>' : ''}
-    <div class="signs">
-      ${pruefer.map((p) => `<div><div class="line"></div>${audit.ort ? `${escapeHtml(audit.ort)}, ` : 'Ort, '}${escapeHtml(formatDate(audit.pruefdatum))} – ${escapeHtml(p)} (Kassenprüfung)</div>`).join('')}
-      <div><div class="line"></div>Kenntnis genommen: ${escapeHtml(namesFor('Kassenwart/in')[0] ?? '')} (Kassenwart/in)</div>
-    </div>
-    ${anlage ? `<div class="pagebreak"></div><h2>Anlage: Prüfprotokoll ${audit.jahr}</h2>
-      <table class="small"><thead><tr><th>Datum</th><th>Zahlungspartner / Zweck</th><th>Kategorie</th><th>Beleg</th><th class="num">Betrag</th><th>Prüfung</th></tr></thead><tbody>
-      ${items.map((i) => `<tr><td>${escapeHtml(formatDate(i.buchungsdatum))}</td><td>${escapeHtml(i.gegen_name || i.buchungstext)}<br><small>${escapeHtml(i.verwendungszweck)}</small></td>
-        <td>${escapeHtml(i.zuordnung.map((z) => z.nummer).filter(Boolean).join(', '))}</td><td>${escapeHtml(i.belege.map((b) => b.belegnr).join(', ') || '–')}</td>
-        <td class="num">${eur(i.betrag_cent)}</td><td>${i.check ? (i.check.status === 'ok' ? '✓' : '? ' + escapeHtml(i.check.kommentar)) : '–'}</td></tr>`).join('')}
-      </tbody></table>` : ''}
-    <style>
-      h2 { font-size: 12pt; margin: 14pt 0 6pt; } small { color: #555; } table.small { font-size: 8.5pt; }
-      .signs { display: grid; grid-template-columns: 1fr 1fr; gap: 28pt 30pt; margin-top: 30pt; font-size: 9pt; }
-      .signs .line { border-bottom: 1px solid #000; height: 28pt; margin-bottom: 3pt; }
-      .pagebreak { page-break-before: always; }
-    </style>`;
-  printHtml(`Kassenprüfbericht ${audit.jahr}`, body);
 }

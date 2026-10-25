@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { all, getSetting, run, scalar, tx } from '../db/db';
+import { all, run, scalar, tx } from '../db/db';
 import type { FeeGroup, FeeRate, Member } from '../db/schema';
 import { navigate, useLocalState, useQuery } from '../hooks';
 import { balanceBefore, isActive, loadFeeContext, rateFor, yearSummary } from '../lib/fees';
 import { formatEUR, todayISO } from '../lib/format';
 import { feeGroups, memberName } from '../lib/lookups';
-import { centToCsv, escapeHtml, printHtml, toCsv } from '../lib/print';
+import { centToCsv, toCsv } from '../lib/print';
+import { offeneBeitraegePdf } from '../lib/pdfDocs';
+import { PdfPreview } from '../components/PdfPreview';
 import { downloadBlob } from '../db/storage';
 import { attempt, Field, Modal, MoneyInput, PageHeader, Stat, Tabs, TextInput, YearSelect } from '../components/ui';
 
@@ -168,6 +170,7 @@ function GroupDialog({ g, onClose }: { g: Partial<FeeGroup>; onClose: () => void
 function OpenItems() {
   const [year, setYear] = useLocalState('year', new Date().getFullYear());
   const [onlyOpen, setOnlyOpen] = useState(true);
+  const [pdf, setPdf] = useState(false);
   const data = useQuery(() => {
     const ctx = loadFeeContext();
     const members = all<Member>('SELECT * FROM members ORDER BY nachname, vorname');
@@ -197,15 +200,6 @@ function OpenItems() {
       `beitraege-${year}.csv`,
       'text/csv;charset=utf-8',
     );
-  const print = () => {
-    const verein = getSetting('verein_name');
-    printHtml(`Offene Beiträge ${year}`, `<h1>Offene Beiträge ${year} – ${escapeHtml(verein)}</h1>
-      <p>Stand ${new Date().toLocaleDateString('de-DE')}</p>
-      <table><thead><tr><th>Nr.</th><th>Name</th><th>Kontakt</th><th class="num">Soll</th><th class="num">Bezahlt</th><th class="num">Vorjahre</th><th class="num">Offen</th></tr></thead><tbody>
-      ${visible.map(({ m, s, vortrag }) => `<tr><td>${escapeHtml(m.mitgliedsnr)}</td><td>${escapeHtml(memberName(m))}</td><td>${escapeHtml(m.email || m.mobil || m.telefon || '')}</td>
-        <td class="num">${formatEUR(s.soll)}</td><td class="num">${formatEUR(s.bezahlt)}</td><td class="num">${formatEUR(vortrag)}</td><td class="num"><b>${formatEUR(s.offen + vortrag)}</b></td></tr>`).join('')}
-      </tbody></table>`);
-  };
 
   return (
     <>
@@ -219,7 +213,7 @@ function OpenItems() {
         <YearSelect value={year} onChange={setYear} />
         <label className="checkbox"><input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> nur offene Posten</label>
         <span className="spacer" />
-        <button onClick={print}>Liste drucken</button>
+        <button onClick={() => setPdf(true)}>📄 Liste als PDF</button>
         <button onClick={exportCsv}>CSV exportieren</button>
       </div>
       <div className="table-wrap">
@@ -245,6 +239,14 @@ function OpenItems() {
           </tbody>
         </table>
       </div>
+      {pdf && (
+        <PdfPreview
+          title={`Offene Beiträge ${year}`}
+          filename={`Offene_Beitraege_${year}.pdf`}
+          build={() => offeneBeitraegePdf(year, visible)}
+          onClose={() => setPdf(false)}
+        />
+      )}
     </>
   );
 }

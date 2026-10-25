@@ -15,6 +15,7 @@ import { ReportPage } from './pages/Report';
 import { DataPage } from './pages/DataPage';
 import { AuditPage } from './pages/Audit';
 import { StatementsPage } from './pages/Statements';
+import { getLogo } from './lib/logo';
 import { VereinPage } from './pages/Verein';
 
 type NavItem = { id: string; label: string; icon: string };
@@ -121,7 +122,7 @@ function Shell({ onWiped }: { onWiped: () => void }) {
     <div className={`shell ${menuOpen ? 'menu-open' : ''}`}>
       <aside className="sidebar" onClick={() => setMenuOpen(false)}>
         <div className="brand">
-          <span className="brand-logo" aria-hidden>空</span>
+          {getLogo() ? <img className="brand-logo brand-img" src={getLogo()!} alt="" /> : <span className="brand-logo" aria-hidden>空</span>}
           <div>
             <div className="brand-name" title={getSetting('verein_name')}>{brandName(getSetting('verein_name'))}</div>
             <div className="brand-sub">Vereinsverwaltung · lokal</div>
@@ -138,6 +139,7 @@ function Shell({ onWiped }: { onWiped: () => void }) {
             💾 Sichern{changes ? <span className="pill">{changes}</span> : null}
           </button>
           <div className="offline">🔒 Offline · keine Cloud</div>
+          <div className="app-meta">Version {__APP_VERSION__} · © OE-Media.de</div>
         </div>
       </aside>
       <div className="main">

@@ -1,17 +1,17 @@
 import { useState, type ReactNode } from 'react';
 import { all, get, getSetting, run, tx } from '../db/db';
 import type { Graduation, Member, MemberCharge } from '../db/schema';
-import { GRADES, gradeIndex, gradeName } from '../db/seed';
+import { GRADES, gradeIndex } from '../db/seed';
 import { navigate, useQuery } from '../hooks';
 import { balanceBefore, firstFeeYear, isActive, loadFeeContext, yearSummary, ZAHLWEISEN } from '../lib/fees';
 import { ageAt, earliestExitDate, formatDate, formatEUR, formatIBAN, todayISO, yearOf } from '../lib/format';
 import { categoryOptions, feeGroups } from '../lib/lookups';
-import { escapeHtml, printHtml } from '../lib/print';
+import { kuendigungPdf } from '../lib/pdfDocs';
+import { PdfPreview } from '../components/PdfPreview';
 import {
   attempt, Badge, DateInput, Empty, Field, GradeBadge, Modal, MoneyInput, PageHeader, Select, Tabs, TextInput,
 } from '../components/ui';
 import { MemberForm } from './Members';
-import { getVereinsdaten, signatory } from '../lib/verein';
 import { missingFields } from '../lib/completeness';
 
 type Tab = 'stammdaten' | 'beitraege' | 'pruefungen';
@@ -20,6 +20,7 @@ export function MemberDetail({ id }: { id: number }) {
   const [tab, setTab] = useState<Tab>('beitraege');
   const [edit, setEdit] = useState(false);
   const [kuendigung, setKuendigung] = useState(false);
+  const [pdf, setPdf] = useState(false);
   const m = useQuery(() => get<Member>('SELECT * FROM members WHERE id = ?', [id]), [id]);
   if (!m) return <div className="page"><Empty>Mitglied nicht gefunden. <a href="#/mitglieder">Zur Liste</a></Empty></div>;
   const today = todayISO();
@@ -47,7 +48,7 @@ export function MemberDetail({ id }: { id: number }) {
         </span>}
         actions={<>
           {!m.austritt && <button onClick={() => setKuendigung(true)}>Kündigung erfassen</button>}
-          {m.austritt && <button onClick={() => printConfirmation(m)}>Kündigungsbestätigung drucken</button>}
+          {m.austritt && <button onClick={() => setPdf(true)}>📄 Kündigungsbestätigung</button>}
           <button onClick={remove} className="danger-outline">Löschen</button>
           <button className="primary" onClick={() => setEdit(true)}>Bearbeiten</button>
         </>}
@@ -71,6 +72,14 @@ export function MemberDetail({ id }: { id: number }) {
       {tab === 'pruefungen' && <Graduations m={m} />}
       {edit && <MemberForm initial={m} onClose={() => setEdit(false)} />}
       {kuendigung && <CancellationDialog m={m} onClose={() => setKuendigung(false)} />}
+      {pdf && (
+        <PdfPreview
+          title={`Kündigungsbestätigung ${m.vorname} ${m.nachname}`}
+          filename={`Kuendigungsbestaetigung_${m.nachname}_${m.vorname}.pdf`.replace(/\s+/g, '_')}
+          build={() => kuendigungPdf(m)}
+          onClose={() => setPdf(false)}
+        />
+      )}
     </div>
   );
 }
@@ -326,25 +335,4 @@ function CancellationDialog({ m, onClose }: { m: Member; onClose: () => void }) 
       </div>
     </Modal>
   );
-}
-
-function printConfirmation(m: Member) {
-  const vd = getVereinsdaten();
-  const verein = vd.verein_name || 'Karateverein';
-  const adresse = [vd.verein_strasse, `${vd.verein_plz} ${vd.verein_ort}`.trim()].filter(Boolean).join('\n');
-  const unterzeichner = signatory();
-  const body = `
-    <div class="absender">${escapeHtml(verein)}${adresse ? ' · ' + escapeHtml(adresse.replace(/\n/g, ' · ')) : ''}</div>
-    <div class="anschrift">${escapeHtml([m.anrede, m.titel, m.vorname, m.nachname].filter(Boolean).join(' '))}<br>
-      ${escapeHtml(m.strasse)}<br>${m.adresszusatz ? escapeHtml(m.adresszusatz) + '<br>' : ''}${escapeHtml(m.plz)} ${escapeHtml(m.ort)}</div>
-    <div class="datum">${escapeHtml(formatDate(todayISO()))}</div>
-    <h1>Bestätigung Ihrer Kündigung</h1>
-    <p>${m.anrede === 'Frau' ? 'Sehr geehrte Frau' : m.anrede === 'Herr' ? 'Sehr geehrter Herr' : 'Guten Tag'} ${escapeHtml(m.anrede ? m.nachname : `${m.vorname} ${m.nachname}`)},</p>
-    <p>hiermit bestätigen wir den Eingang Ihrer Kündigung${m.kuendigung_eingang ? ` vom ${escapeHtml(formatDate(m.kuendigung_eingang))}` : ''}.
-       Ihre Mitgliedschaft${m.mitgliedsnr ? ` (Mitgliedsnummer ${escapeHtml(m.mitgliedsnr)})` : ''} endet zum
-       <strong>${escapeHtml(formatDate(m.austritt))}</strong>.</p>
-    <p>Bis zu diesem Zeitpunkt sind die Mitgliedsbeiträge noch zu entrichten. ${m.sepa_mandat_ref ? 'Das SEPA-Lastschriftmandat erlischt mit Ende der Mitgliedschaft.' : ''}</p>
-    <p>Wir bedanken uns für Ihre Mitgliedschaft${gradeIndex(m.grad) > 0 ? ` und Ihren Weg bis zum ${escapeHtml(gradeName(m.grad))}` : ''} und wünschen Ihnen alles Gute.</p>
-    <p class="sign">Mit sportlichen Grüßen<br><br><br>${escapeHtml(unterzeichner).replace(/\n/g, '<br>')}<br>${escapeHtml(verein)}</p>`;
-  printHtml(`Kündigungsbestätigung ${m.vorname} ${m.nachname}`, body);
 }

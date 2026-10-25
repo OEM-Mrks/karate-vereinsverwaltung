@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Officer } from '../db/schema';
 import { useQuery } from '../hooks';
 import { formatDate } from '../lib/format';
 import { memberOptions } from '../lib/lookups';
 import { deleteOfficer, FUNKTIONEN, getVereinsdaten, officers, saveOfficer, saveVereinsdaten, type OfficerView, type Vereinsdaten } from '../lib/verein';
-import { attempt, Badge, Checkbox, DateInput, Empty, Field, Modal, PageHeader, Select, TextArea, TextInput } from '../components/ui';
+import { getLogo, removeLogo, saveLogo } from '../lib/logo';
+import { attempt, Badge, Checkbox, DateInput, Empty, Field, Modal, PageHeader, Select, TextArea, TextInput, toast } from '../components/ui';
 
 export function VereinPage() {
   const [edit, setEdit] = useState<Partial<Officer> | null>(null);
@@ -13,6 +14,7 @@ export function VereinPage() {
   return (
     <div className="page">
       <PageHeader title="Verein & Vorstand" subtitle="Stammdaten des Vereins und alle Ämter – wird für Briefe, Kassenprüfbericht und GuV verwendet." />
+      <LogoCard />
       <VereinsdatenCard />
       <div className="card">
         <div className="card-head">
@@ -49,6 +51,33 @@ export function VereinPage() {
         )}
       </div>
       {edit && <OfficerDialog o={edit} onClose={() => setEdit(null)} />}
+    </div>
+  );
+}
+
+function LogoCard() {
+  const logo = useQuery(() => getLogo());
+  const input = useRef<HTMLInputElement>(null);
+  const upload = async (f: File) => {
+    try {
+      await saveLogo(f);
+      toast('Logo gespeichert');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'bad');
+    }
+  };
+  return (
+    <div className="card logo-card">
+      <div className="logo-preview">{logo ? <img src={logo} alt="Vereinslogo" /> : <span className="muted small">kein Logo</span>}</div>
+      <div>
+        <h3>Vereinslogo</h3>
+        <p className="muted small">Erscheint in der Seitenleiste und im Kopf aller PDF-Dokumente (GuV, Prüfbericht, Briefe). PNG, JPG oder SVG – wird automatisch verkleinert.</p>
+        <div className="actions">
+          <button onClick={() => input.current?.click()}>{logo ? 'Logo ersetzen' : 'Logo hochladen'}</button>
+          {logo && <button className="danger-outline" onClick={() => confirm('Logo entfernen?') && attempt(() => removeLogo(), 'Logo entfernt')}>Entfernen</button>}
+        </div>
+        <input ref={input} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ''; }} />
+      </div>
     </div>
   );
 }

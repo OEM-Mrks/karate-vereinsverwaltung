@@ -14,6 +14,7 @@ Keine Cloud, kein Server, kein Konto. Alle Daten liegen in einer SQLite-Datei, d
 - Kündigungsbestätigung als druckfertiger Brief
 
 **Verein & Vorstand**
+- Vereinslogo (erscheint in der Seitenleiste und auf allen PDF-Dokumenten)
 - Vereinsdaten: Geschäftsanschrift, Kontakt, Registergericht und VR-Nummer, Finanzamt, Steuernummer, Freistellungsbescheid, Dachverband
 - Ämter: Vorsitz, 2. Vorsitz, Kassenwart/in, Schriftführer/in, Beisitzer/innen, Kassenprüfer/innen u. a. – als Mitglied verknüpft oder externe Person, mit Wahl- und Amtszeitende und Kennzeichnung des Vorstands nach § 26 BGB
 - Wird automatisch verwendet: Absender und Unterschrift in Briefen, Kassenprüfer und Kassenwart im Prüfbericht, Unterschriftszeilen der GuV; Hinweis bei abgelaufenen Amtszeiten
@@ -55,7 +56,10 @@ Keine Cloud, kein Server, kein Konto. Alle Daten liegen in einer SQLite-Datei, d
 - Einnahmen-Überschuss-Rechnung nach Zahlungsfluss mit Vorjahresvergleich – für das ganze Jahr oder **unterjährig** (bis heute, Quartal, Halbjahr, Monat, frei wählbar)
 - **Kontostand zum 1.1. und 31.12.** je Konto und Abstimmung: Anfangsbestand + Einnahmen − Ausgaben = Endbestand
 - Vergleich mit dem Kontostand laut Kontoauszug – fehlende oder doppelte Importe fallen sofort auf
-- Drucken / als PDF speichern, Export als CSV
+- Export als CSV
+
+**PDF-Dokumente**
+- GuV, Bericht der Kassenprüfung, Kündigungsbestätigung und Liste offener Beiträge werden als echte PDF-Dateien direkt im Browser erzeugt (pdfmake, Schrift eingebettet) – mit Vereinslogo, Briefkopf, Fußzeile mit Vereinsdaten und Seitenzahlen; kein Druckdialog nötig
 
 ## Datenschutz (DSGVO)
 
@@ -96,4 +100,4 @@ Aufbau und Datenmodell: [docs/KONZEPT.md](docs/KONZEPT.md).
 
 Die Kategorien orientieren sich am DATEV-Kontenrahmen SKR04, sind aber für Vereine vereinfacht und frei anpassbar. Die App ersetzt keine steuerliche Beratung.
 
-Lizenz: MIT
+© OE-Media.de – alle Rechte vorbehalten. Nutzung nur mit ausdrücklicher Genehmigung, siehe [LICENSE](LICENSE).

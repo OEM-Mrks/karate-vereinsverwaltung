@@ -1,7 +1,7 @@
 {
   "name": "vereinsverwaltung",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "Lokale Vereinsverwaltung für Karatevereine: Mitglieder, Beiträge, Kontoimport, Belege und GuV – komplett im Browser, ohne Cloud.",
   "scripts": {
@@ -13,11 +13,13 @@
   },
   "dependencies": {
     "pdfjs-dist": "^6.4.299",
+    "pdfmake": "0.3.11",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sql.js": "^1.15.1"
   },
   "devDependencies": {
+    "@types/pdfmake": "0.3.3",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@types/sql.js": "^1.4.11",
@@ -27,5 +29,5 @@
     "vite-plugin-singlefile": "^2.3.4",
     "vitest": "^5.0.5"
   },
-  "license": "MIT"
+  "license": "UNLICENSED"
 }
