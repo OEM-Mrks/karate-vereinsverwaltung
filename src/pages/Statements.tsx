@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { all, scalar } from '../db/db';
+import { all, get, scalar } from '../db/db';
 import type { Account } from '../db/schema';
 import { useLocalState, useQuery } from '../hooks';
 import { balanceAt } from '../lib/bank';
@@ -7,7 +7,7 @@ import { formatSize } from '../lib/docs';
 import { formatDate, formatEUR, formatIBAN } from '../lib/format';
 import { pdfText } from '../lib/pdftext';
 import {
-  deleteStatement, findAccountForIban, listStatements, missingMonths, parseStatementText, saveStatement, statementBlobUrl, statementMonth,
+  deleteStatement, deleteStatementsOfYear, findAccountForIban, resortStatements, listStatements, missingMonths, parseStatementText, saveStatement, statementBlobUrl, statementMonth,
   updateStatement, type SaveStatementResult, type StatementInfo, type StatementMeta,
 } from '../lib/statements';
 import { DocViewer } from '../components/Docs';
@@ -94,6 +94,24 @@ export function StatementsPage() {
   }
 
   const own = list.filter((s) => s.account_id === account?.id);
+
+  const resort = async () => {
+    if (!account) return;
+    setBusy(true);
+    try {
+      const r = await resortStatements(account.id, pdfText);
+      toast(r.geprueft ? `${r.geprueft} Auszüge neu ausgelesen, ${r.verschoben} in einen anderen Monat verschoben` : 'Keine automatisch erkannten Auszüge vorhanden', 'info');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'bad');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const removeYear = () => {
+    if (!account || !confirm(`Alle ${own.length} Kontoauszüge ${year} von „${account.name}" löschen? Die PDFs sind danach nur noch in älteren Sicherungen enthalten.`)) return;
+    attempt(() => { const n = deleteStatementsOfYear(account.id, year); toast(`${n} Kontoauszüge gelöscht`); });
+  };
+
   return (
     <div className="page">
       <PageHeader
@@ -102,6 +120,8 @@ export function StatementsPage() {
         actions={<>
           {accounts.length > 1 && <Select value={account?.id ?? null} onChange={setAccountId} options={accounts.map((a) => ({ value: a.id, label: a.name }))} />}
           <YearSelect value={year} onChange={setYear} />
+          <button disabled={busy || !account} onClick={() => void resort()} title="Alle automatisch erkannten Auszüge dieses Kontos neu auslesen und dem richtigen Monat zuordnen">↻ Neu einsortieren</button>
+          <button className="danger-outline" disabled={busy || !own.length} onClick={removeYear}>Alle {year} löschen</button>
         </>}
       />
       <div
@@ -250,8 +270,45 @@ function StatementDialog({ initial, accounts, onClose }: { initial: StatementMet
       onClose={onClose}
       footer={<><button className="danger-outline" onClick={remove}>Löschen</button><button onClick={onClose}>Abbrechen</button><button className="primary" disabled={!v.account_id || !v.monat} onClick={save}>Speichern</button></>}
     >
-      {!initial.erkannt && <p className="muted small">Angaben wurden nicht automatisch erkannt.</p>}
+      {!initial.erkannt && <p className="muted small">Von Hand erfasst bzw. bearbeitet – wird beim Neu-Einsortieren nicht verändert.</p>}
       <StatementFields v={v} setV={setV} accounts={accounts} />
+      <ExtractedText id={initial.id} />
     </Modal>
+  );
+}
+
+/** Zeigt den aus dem PDF gelesenen Text – zur Kontrolle, falls Monat oder Kontostand falsch erkannt wurden. */
+function ExtractedText({ id }: { id: number }) {
+  const [text, setText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const show = async () => {
+    const st = get<{ daten: Uint8Array; mime: string }>('SELECT daten, mime FROM statements WHERE id = ?', [id]);
+    if (!st) return;
+    if (st.mime !== 'application/pdf') return setText('(kein PDF)');
+    setLoading(true);
+    try {
+      setText((await pdfText(st.daten)) || '(Kein Text gefunden – vermutlich ein gescannter Auszug.)');
+    } catch (e) {
+      setText(`Fehler beim Lesen: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+  const relevant = text?.split('\n').filter((l) => /kontostand|saldo|auszug|zeitraum|\bbis\b/i.test(l)) ?? [];
+  return (
+    <div className="mt">
+      {text == null ? (
+        <button className="link small" disabled={loading} onClick={() => void show()}>{loading ? 'lese …' : 'Ausgelesenen Text anzeigen'}</button>
+      ) : (
+        <>
+          <div className="field-label">Zeilen mit Kontostand / Auszug / Zeitraum</div>
+          <pre className="extracted">{relevant.join('\n') || '–'}</pre>
+          <details>
+            <summary className="small">Gesamten Text anzeigen</summary>
+            <pre className="extracted">{text}</pre>
+          </details>
+        </>
+      )}
+    </div>
   );
 }

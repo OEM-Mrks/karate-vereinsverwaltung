@@ -25,9 +25,13 @@ function amount(raw: string, sign?: string): number | null {
 /**
  * Liest typische Angaben aus dem Text eines Kontoauszugs (Sparkasse, Volksbank, DKB, ING u. a.):
  * IBAN, Auszugsnummer, Zeitraum, alter und neuer Kontostand. Fehlende Angaben bleiben null.
+ *
+ * Reihenfolge für den Zeitraum: ausdrücklicher Zeitraum („01.03.2026 bis 31.03.2026“) → Monat, in dem die meisten
+ * Buchungen liegen → späteste Kontostandsangabe → Auszugsnummer n/Jahr. Kontostände werden danach dem Zeitraum
+ * zugeordnet: vor Beginn = alter, ab Beginn = neuer Kontostand.
  */
 export function parseStatementText(text: string): StatementInfo {
-  const t = text.replace(/ /g, ' ');
+  const t = text.replace(/\u00a0/g, ' ');
   const ibanM = t.match(/\b(DE\d{2}(?:\s?\d{4}){4}\s?\d{2})\b/);
   const iban = ibanM ? normalizeIBAN(ibanM[1]) : null;
 
@@ -35,43 +39,75 @@ export function parseStatementText(text: string): StatementInfo {
     t.match(/(?:Kontoauszug|Auszug)\s*(?:Nr\.?|Nummer)?\s*:?\s*(\d{1,3})\s*\/\s*(\d{4})/i) ??
     t.match(/(?:Kontoauszug|Auszug)\s*(?:Nr\.?|Nummer)\s*:?\s*(\d{1,3})\b/i);
   const nummer = nrM ? (nrM[2] ? `${Number(nrM[1])}/${nrM[2]}` : String(Number(nrM[1]))) : null;
+  const nrJahr = nrM?.[2] ? Number(nrM[2]) : null;
 
+  // 1. Ausdrücklicher Zeitraum – nur plausible Spannen (1 Woche bis 4 Monate), damit keine Buchungszeilen greifen
   let von: string | null = null;
   let bis: string | null = null;
-  const periodM = t.match(/(\d{1,2}\.\d{1,2}\.\d{2,4})\s*(?:bis|-|–|—)\s*(\d{1,2}\.\d{1,2}\.\d{2,4})/);
-  if (periodM) {
-    von = parseDate(periodM[1]);
-    bis = parseDate(periodM[2]);
+  for (const m of t.matchAll(/(\d{1,2}\.\d{1,2}\.\d{2,4})\s*(?:bis|-|–|—)\s*(\d{1,2}\.\d{1,2}\.\d{2,4})/g)) {
+    const a = parseDate(m[1]);
+    const b = parseDate(m[2]);
+    if (!a || !b) continue;
+    const tage = (fromISO(b).getTime() - fromISO(a).getTime()) / 86_400_000;
+    if (tage >= 6 && tage <= 125) {
+      von = a;
+      bis = b;
+      break;
+    }
   }
 
-  // Ausdrückliche Bezeichnungen
-  let alt: number | null = null;
-  let neu: number | null = null;
-  const altM = t.match(new RegExp(String.raw`(?:alter\s+(?:Kontostand|Saldo)|Anfangssaldo|Saldo\s+alt|Anfangsbestand)[^\n\d-]{0,80}?(?:\d{1,2}\.\d{1,2}\.\d{2,4}[^\n\d-]{0,20})?` + AMOUNT, 'i'));
-  if (altM) alt = amount(altM[1], altM[2]);
-  const neuM = t.match(new RegExp(String.raw`(?:neuer\s+(?:Kontostand|Saldo)|Endsaldo|Schlusssaldo|Saldo\s+neu|Endbestand)[^\n\d-]{0,80}?(?:\d{1,2}\.\d{1,2}\.\d{2,4}[^\n\d-]{0,20})?` + AMOUNT, 'i'));
-  if (neuM) neu = amount(neuM[1], neuM[2]);
-
-  // "Kontostand am 31.12.2025 … 1.234,56" – früheste Angabe = alter, späteste = neuer Kontostand
-  const datedRe = new RegExp(String.raw`(?:Kontostand|Saldo)\s+(?:am|per|zum|vom)\s+(\d{1,2}\.\d{1,2}\.\d{2,4})[^\n]{0,60}?` + AMOUNT, 'gi');
+  // Kontostandsangaben mit Datum; der Betrag darf auch am Anfang der nächsten Zeile stehen
+  const datedRe = new RegExp(String.raw`(?:Kontostand|Saldo)\s+(?:am|per|zum|vom)\s+(\d{1,2}\.\d{1,2}\.\d{2,4})[^\n]{0,60}?(?:\n\s*)?` + AMOUNT, 'gi');
   const dated = [...t.matchAll(datedRe)]
     .map((m) => ({ datum: parseDate(m[1]), saldo: amount(m[2], m[3]) }))
     .filter((d): d is { datum: string; saldo: number } => !!d.datum && d.saldo != null)
     .sort((a, b) => a.datum.localeCompare(b.datum));
-  const first = dated[0];
-  const last = dated[dated.length - 1];
-  if (first && last && first.datum < last.datum) {
-    alt ??= first.saldo;
-    von ??= nextDay(first.datum);
-    neu ??= last.saldo;
-    bis ??= last.datum;
-  } else if (first) {
-    // Nur eine datierte Angabe: vor dem Zeitraum = alter, sonst neuer Kontostand
-    if (von && first.datum < von) alt ??= first.saldo;
-    else {
-      neu ??= first.saldo;
-      bis ??= first.datum;
+
+  // 2. Monat mit den meisten Buchungen (Zeilen, die mit einem Datum beginnen)
+  if (!von) {
+    const jahrHint = nrJahr ?? (dated.length ? Number(dated[dated.length - 1].datum.slice(0, 4)) : null);
+    const counts = new Map<string, number>();
+    for (const line of t.split('\n')) {
+      if (/^\s*(Kontostand|Saldo|alter|neuer)/i.test(line)) continue;
+      const m = line.match(/^\s*(\d{1,2})\.(\d{1,2})\.(\d{2,4})?/);
+      if (!m) continue;
+      const d = m[3] ? parseDate(`${m[1]}.${m[2]}.${m[3]}`) : jahrHint ? parseDate(`${m[1]}.${m[2]}.${jahrHint}`) : null;
+      if (!d) continue;
+      const key = d.slice(0, 7);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
     }
+    const best = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))[0];
+    if (best) setMonth(best[0]);
+  }
+  // 3. Späteste Kontostandsangabe (bei mehreren: Zeitraum dazwischen)
+  if (!von && dated.length >= 2 && dated[0].datum < dated[dated.length - 1].datum) {
+    von = nextDay(dated[0].datum);
+    bis = dated[dated.length - 1].datum;
+  }
+  // 4. Auszugsnummer n/Jahr bei monatlichen Auszügen
+  if (!von && nrM?.[2] && Number(nrM[1]) >= 1 && Number(nrM[1]) <= 12 && !dated.length) {
+    setMonth(`${nrM[2]}-${String(Number(nrM[1])).padStart(2, '0')}`);
+  }
+  if (!von && dated.length === 1) bis = dated[0].datum;
+
+  function setMonth(ym: string) {
+    const [y, mo] = ym.split('-').map(Number);
+    von = toISO(new Date(y, mo - 1, 1));
+    bis = toISO(new Date(y, mo, 0));
+  }
+
+  // Kontostände dem Zeitraum zuordnen
+  let alt: number | null = null;
+  let neu: number | null = null;
+  const altM = t.match(new RegExp(String.raw`(?:alter\s+(?:Kontostand|Saldo)|Anfangssaldo|Saldo\s+alt|Anfangsbestand)[^\n\d-]{0,80}?(?:\d{1,2}\.\d{1,2}\.\d{2,4}[^\n\d-]{0,20})?(?:\n\s*)?` + AMOUNT, 'i'));
+  if (altM) alt = amount(altM[1], altM[2]);
+  const neuM = t.match(new RegExp(String.raw`(?:neuer\s+(?:Kontostand|Saldo)|Endsaldo|Schlusssaldo|Saldo\s+neu|Endbestand)[^\n\d-]{0,80}?(?:\d{1,2}\.\d{1,2}\.\d{2,4}[^\n\d-]{0,20})?(?:\n\s*)?` + AMOUNT, 'i'));
+  if (neuM) neu = amount(neuM[1], neuM[2]);
+  if (dated.length) {
+    const vor = von ? dated.filter((d) => d.datum < von!) : [];
+    const ab = von ? dated.filter((d) => d.datum >= von!) : dated;
+    if (vor.length) alt ??= vor[vor.length - 1].saldo;
+    if (ab.length) neu ??= ab[ab.length - 1].saldo;
   }
   return { iban, nummer, von, bis, saldo_alt_cent: alt, saldo_neu_cent: neu };
 }
@@ -177,7 +213,8 @@ export function updateStatement(id: number, v: Partial<Pick<Statement, 'account_
   const keys = Object.keys(v) as (keyof typeof v)[];
   if (!keys.length) return;
   tx(() => {
-    run(`UPDATE statements SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`, [...keys.map((k) => v[k] ?? null), id]);
+    // Von Hand bearbeitete Auszüge werden beim Neu-Einsortieren nicht mehr überschrieben (erkannt = 0)
+    run(`UPDATE statements SET ${keys.map((k) => `${k} = ?`).join(', ')}, erkannt = 0 WHERE id = ?`, [...keys.map((k) => v[k] ?? null), id]);
     const s = get<Statement>('SELECT * FROM statements WHERE id = ?', [id]);
     if (s) checkBalances(s.account_id, s);
   });
@@ -185,6 +222,52 @@ export function updateStatement(id: number, v: Partial<Pick<Statement, 'account_
 
 export function deleteStatement(id: number) {
   run('DELETE FROM statements WHERE id = ?', [id]);
+}
+
+/** Entfernt die aus Kontoauszügen gespeicherten Kontrollwerte und legt sie aus den abgelegten Auszügen neu an. */
+function rebuildStatementCheckpoints(accountId: number) {
+  run("DELETE FROM balance_checkpoints WHERE account_id = ? AND notiz LIKE 'Kontoauszug%'", [accountId]);
+  const list = all<Statement>('SELECT * FROM statements WHERE account_id = ? ORDER BY COALESCE(bis, von, \'\'), id', [accountId]);
+  for (const st of list) checkBalances(accountId, st);
+}
+
+/** Löscht alle Kontoauszüge eines Kontos in einem Jahr (inkl. der daraus gespeicherten Kontrollwerte). */
+export function deleteStatementsOfYear(accountId: number, jahr: number): number {
+  let n = 0;
+  tx(() => {
+    n = scalar<number>('SELECT COUNT(*) FROM statements WHERE account_id = ? AND jahr = ?', [accountId, jahr]) ?? 0;
+    run('DELETE FROM statements WHERE account_id = ? AND jahr = ?', [accountId, jahr]);
+    rebuildStatementCheckpoints(accountId);
+  });
+  return n;
+}
+
+/**
+ * Liest alle automatisch erkannten Auszüge eines Kontos neu aus und sortiert sie neu ein.
+ * Von Hand bearbeitete oder nicht lesbare Auszüge bleiben unverändert. Der Text-Extraktor wird übergeben,
+ * damit diese Funktion ohne pdf.js testbar bleibt.
+ */
+export async function resortStatements(accountId: number, extract: (bytes: Uint8Array) => Promise<string>): Promise<{ geprueft: number; verschoben: number }> {
+  const list = all<Statement>("SELECT * FROM statements WHERE account_id = ? AND erkannt = 1 AND mime = 'application/pdf'", [accountId]);
+  const updates: { id: number; info: StatementInfo; jahr: number; monat: number }[] = [];
+  for (const st of list) {
+    const info = parseStatementText(await extract(st.daten));
+    const ym = statementMonth(info);
+    if (ym) updates.push({ id: st.id, info, ...ym });
+  }
+  let verschoben = 0;
+  tx(() => {
+    for (const u of updates) {
+      const old = list.find((x) => x.id === u.id)!;
+      if (old.jahr !== u.jahr || old.monat !== u.monat) verschoben++;
+      run(
+        'UPDATE statements SET jahr = ?, monat = ?, nummer = ?, von = ?, bis = ?, saldo_alt_cent = ?, saldo_neu_cent = ? WHERE id = ?',
+        [u.jahr, u.monat, u.info.nummer ?? old.nummer, u.info.von, u.info.bis, u.info.saldo_alt_cent, u.info.saldo_neu_cent, u.id],
+      );
+    }
+    rebuildStatementCheckpoints(accountId);
+  });
+  return { geprueft: list.length, verschoben };
 }
 
 /** Monate (1–12) eines Jahres, für die beim Konto kein Auszug vorliegt – nur bis zum aktuellen Monat. */

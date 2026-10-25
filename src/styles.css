@@ -455,3 +455,4 @@ main { padding: 26px 32px 60px; max-width: 1400px; }
 .month-card.over { border-color: var(--accent); background: var(--accent-soft); }
 .month-head { display: flex; justify-content: space-between; align-items: center; }
 .statement-row { border-top: 1px solid var(--border); padding-top: 6px; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.extracted { white-space: pre-wrap; font-family: var(--mono); font-size: 11px; background: var(--surface-2); padding: 8px; border-radius: 6px; max-height: 220px; overflow: auto; margin: 4px 0 8px; }
