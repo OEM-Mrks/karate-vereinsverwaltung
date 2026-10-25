@@ -5,6 +5,7 @@ import { activeMonths, rateFor } from '../lib/fees';
 import { toISO } from '../lib/format';
 import { all, createNew, run, scalar, setSetting, tx } from './db';
 import type { FeeRate, Member } from './schema';
+import { saveVereinsdaten } from '../lib/verein';
 
 function rng(seed: number) {
   return () => {
@@ -39,8 +40,11 @@ export function loadDemo() {
   const today = toISO(now);
 
   tx(() => {
-    setSetting('verein_anschrift', 'Am Dojo 1\n12345 Musterstadt');
-    setSetting('verein_unterzeichner', 'Erika Beispiel, 1. Vorsitzende');
+    saveVereinsdaten({
+      verein_strasse: 'Am Dojo 1', verein_plz: '12345', verein_ort: 'Musterstadt', verein_email: 'vorstand@example.org',
+      verein_registergericht: 'Amtsgericht Musterstadt', verein_registernummer: 'VR 1234', verein_finanzamt: 'Musterstadt',
+      verein_gruendung: '1985', verein_verband: 'Karate-Landesverband (Demo)',
+    });
     setSetting('beitragskonto_ab', lastYear);
     const cat = (nr: string) => scalar<number>('SELECT id FROM categories WHERE nummer = ?', [nr])!;
     const groups = all<{ id: number; name: string }>('SELECT id, name FROM fee_groups');
@@ -84,6 +88,18 @@ export function loadDemo() {
       ids.push(id);
       if (grad !== 'unranked') run('INSERT INTO graduations(member_id, grad, datum, pruefer) VALUES (?,?,?,?)', [id, grad, `${lastYear}-06-15`, 'Sensei Beispiel']);
     }
+    // Vorstand und Ämter
+    const amt = (funktion: string, memberId: number, vorstand: 0 | 1) =>
+      run('INSERT INTO officers(funktion, member_id, gewaehlt_am, amtszeit_bis, vertretungsberechtigt) VALUES (?,?,?,?,?)', [
+        funktion, memberId, `${lastYear}-03-15`, `${thisYear + 1}-03-31`, vorstand,
+      ]);
+    amt('Vorsitzende/r', ids[1], 1);
+    amt('2. Vorsitzende/r', ids[2], 1);
+    amt('Kassenwart/in', ids[4], 1);
+    amt('Schriftführer/in', ids[6], 0);
+    amt('Beisitzer/in', ids[7], 0);
+    amt('Kassenprüfer/in', ids[8], 0);
+    amt('Kassenprüfer/in', ids[10], 0);
     run('INSERT INTO member_charges(member_id, jahr, datum, betrag_cent, beschreibung, category_id) VALUES (?,?,?,?,?,?)', [ids[22], thisYear, `${thisYear}-02-01`, 3000, 'Aufnahmegebühr', cat('4011')]);
 
     // Partner

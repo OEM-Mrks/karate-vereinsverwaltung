@@ -11,6 +11,7 @@ import {
 import { documentBlobUrl } from '../lib/docs';
 import { formatDate, formatEUR, formatIBAN, todayISO } from '../lib/format';
 import { escapeHtml, printHtml } from '../lib/print';
+import { getVereinsdaten, namesFor } from '../lib/verein';
 import { attempt, Badge, Checkbox, DateInput, Empty, Field, PageHeader, Select, Stat, Tabs, TextArea, TextInput, toast, YearSelect } from '../components/ui';
 
 type Tab = 'pruefen' | 'liste' | 'bericht';
@@ -31,7 +32,8 @@ export function AuditPage() {
 }
 
 function StartAudit({ year }: { year: number }) {
-  const [v, setV] = useState({ pruefer: '', pruefdatum: todayISO(), ort: '', umfang: 'alle' as Audit['umfang'] });
+  // Kassenprüfer/innen und Ort aus „Verein & Vorstand“ vorbelegen
+  const [v, setV] = useState(() => ({ pruefer: namesFor('Kassenprüfer/in').join('\n'), pruefdatum: todayISO(), ort: getVereinsdaten().verein_ort, umfang: 'alle' as Audit['umfang'] }));
   return (
     <div className="card">
       <h3>Prüfung für {year} beginnen</h3>
@@ -380,7 +382,7 @@ function printAuditReport(audit: Audit, items: AuditItem[], s: AuditSummary, anl
     ${audit.entlastung ? '<p><b>Die Kassenprüfer empfehlen der Mitgliederversammlung die Entlastung des Vorstands für das Geschäftsjahr ' + audit.jahr + '.</b></p>' : ''}
     <div class="signs">
       ${pruefer.map((p) => `<div><div class="line"></div>${audit.ort ? `${escapeHtml(audit.ort)}, ` : 'Ort, '}${escapeHtml(formatDate(audit.pruefdatum))} – ${escapeHtml(p)} (Kassenprüfung)</div>`).join('')}
-      <div><div class="line"></div>Kenntnis genommen: Kassenwart/in</div>
+      <div><div class="line"></div>Kenntnis genommen: ${escapeHtml(namesFor('Kassenwart/in')[0] ?? '')} (Kassenwart/in)</div>
     </div>
     ${anlage ? `<div class="pagebreak"></div><h2>Anlage: Prüfprotokoll ${audit.jahr}</h2>
       <table class="small"><thead><tr><th>Datum</th><th>Zahlungspartner / Zweck</th><th>Kategorie</th><th>Beleg</th><th class="num">Betrag</th><th>Prüfung</th></tr></thead><tbody>

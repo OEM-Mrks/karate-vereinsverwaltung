@@ -13,6 +13,11 @@ Keine Cloud, kein Server, kein Konto. Alle Daten liegen in einer SQLite-Datei, d
 - **Frühestes Kündigungsdatum**: heute + 3 Monate zum Monatsende (Frist einstellbar), z. B. Kündigung am 25.10.2026 → Austritt 31.01.2027
 - Kündigungsbestätigung als druckfertiger Brief
 
+**Verein & Vorstand**
+- Vereinsdaten: Geschäftsanschrift, Kontakt, Registergericht und VR-Nummer, Finanzamt, Steuernummer, Freistellungsbescheid, Dachverband
+- Ämter: Vorsitz, 2. Vorsitz, Kassenwart/in, Schriftführer/in, Beisitzer/innen, Kassenprüfer/innen u. a. – als Mitglied verknüpft oder externe Person, mit Wahl- und Amtszeitende und Kennzeichnung des Vorstands nach § 26 BGB
+- Wird automatisch verwendet: Absender und Unterschrift in Briefen, Kassenprüfer und Kassenwart im Prüfbericht, Unterschriftszeilen der GuV; Hinweis bei abgelaufenen Amtszeiten
+
 **Beiträge**
 - Beitragsgruppen (Erwachsene, Kinder, Familie, Ehrenmitglied …) mit **Monatsbeitrag je Jahr** – der Jahresbeitrag wird automatisch berechnet (× 12)
 - Neues Beitragsjahr per Klick (übernimmt die Sätze des Vorjahres); fehlt ein Satz, gilt der des Vorjahres

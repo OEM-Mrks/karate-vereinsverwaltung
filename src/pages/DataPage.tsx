@@ -6,13 +6,10 @@ import { formatSize } from '../lib/docs';
 import { earliestExitDate, formatDate, todayISO } from '../lib/format';
 import { categoryOptions } from '../lib/lookups';
 import { CHECK_FIELDS, requiredFields } from '../lib/completeness';
-import { attempt, Field, PageHeader, Select, TextArea, TextInput, toast } from '../components/ui';
+import { attempt, Field, PageHeader, Select, toast } from '../components/ui';
 
 export function DataPage({ onWiped }: { onWiped: () => void }) {
   const s = useQuery(() => ({
-    name: getSetting('verein_name'),
-    anschrift: getSetting('verein_anschrift'),
-    unterzeichner: getSetting('verein_unterzeichner'),
     frist: Number(getSetting('kuendigungsfrist_monate', '3')) || 3,
     startYear: Number(getSetting('beitragskonto_ab', '0')) || 0,
     pflicht: requiredFields(),
@@ -97,11 +94,9 @@ export function DataPage({ onWiped }: { onWiped: () => void }) {
       </div>
 
       <div className="card">
-        <h3>Verein & Einstellungen</h3>
+        <h3>Einstellungen</h3>
         <div className="form-grid">
-          <Field label="Name des Vereins" span={2}><SettingInput k="verein_name" value={s.name} /></Field>
-          <Field label="Unterzeichner (für Briefe)" span={2}><SettingInput k="verein_unterzeichner" value={s.unterzeichner} /></Field>
-          <Field label="Anschrift des Vereins" span={2}><SettingArea k="verein_anschrift" value={s.anschrift} /></Field>
+          <p className="span-4 muted small">Name, Anschrift, Register- und Steuerdaten sowie Vorstand pflegst du unter <a href="#/verein">Stammdaten → Verein &amp; Vorstand</a>.</p>
           <Field label="Kündigungsfrist (Monate)" hint={`Kündigung heute → Austritt zum ${formatDate(earliestExitDate(todayISO(), s.frist))}`}>
             <input type="number" min={0} max={24} value={s.frist} onChange={(e) => attempt(() => setSetting('kuendigungsfrist_monate', Math.max(0, Number(e.target.value) || 0)))} />
           </Field>
@@ -147,14 +142,4 @@ export function DataPage({ onWiped }: { onWiped: () => void }) {
       </div>
     </div>
   );
-}
-
-function SettingInput({ k, value }: { k: string; value: string }) {
-  const [v, setV] = useState(value);
-  return <div onBlur={() => v !== value && attempt(() => setSetting(k, v.trim()), 'Gespeichert')}><TextInput value={v} onChange={setV} /></div>;
-}
-
-function SettingArea({ k, value }: { k: string; value: string }) {
-  const [v, setV] = useState(value);
-  return <div onBlur={() => v !== value && attempt(() => setSetting(k, v.trim()), 'Gespeichert')}><TextArea value={v} onChange={setV} rows={2} /></div>;
 }

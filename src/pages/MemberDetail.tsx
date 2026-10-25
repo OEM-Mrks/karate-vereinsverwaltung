@@ -11,6 +11,7 @@ import {
   attempt, Badge, DateInput, Empty, Field, GradeBadge, Modal, MoneyInput, PageHeader, Select, Tabs, TextInput,
 } from '../components/ui';
 import { MemberForm } from './Members';
+import { getVereinsdaten, signatory } from '../lib/verein';
 import { missingFields } from '../lib/completeness';
 
 type Tab = 'stammdaten' | 'beitraege' | 'pruefungen';
@@ -328,9 +329,10 @@ function CancellationDialog({ m, onClose }: { m: Member; onClose: () => void }) 
 }
 
 function printConfirmation(m: Member) {
-  const verein = getSetting('verein_name', 'Karateverein');
-  const adresse = getSetting('verein_anschrift', '');
-  const unterzeichner = getSetting('verein_unterzeichner', 'Der Vorstand');
+  const vd = getVereinsdaten();
+  const verein = vd.verein_name || 'Karateverein';
+  const adresse = [vd.verein_strasse, `${vd.verein_plz} ${vd.verein_ort}`.trim()].filter(Boolean).join('\n');
+  const unterzeichner = signatory();
   const body = `
     <div class="absender">${escapeHtml(verein)}${adresse ? ' · ' + escapeHtml(adresse.replace(/\n/g, ' · ')) : ''}</div>
     <div class="anschrift">${escapeHtml([m.anrede, m.titel, m.vorname, m.nachname].filter(Boolean).join(' '))}<br>
@@ -343,6 +345,6 @@ function printConfirmation(m: Member) {
        <strong>${escapeHtml(formatDate(m.austritt))}</strong>.</p>
     <p>Bis zu diesem Zeitpunkt sind die Mitgliedsbeiträge noch zu entrichten. ${m.sepa_mandat_ref ? 'Das SEPA-Lastschriftmandat erlischt mit Ende der Mitgliedschaft.' : ''}</p>
     <p>Wir bedanken uns für Ihre Mitgliedschaft${gradeIndex(m.grad) > 0 ? ` und Ihren Weg bis zum ${escapeHtml(gradeName(m.grad))}` : ''} und wünschen Ihnen alles Gute.</p>
-    <p class="sign">Mit sportlichen Grüßen<br><br><br>${escapeHtml(unterzeichner)}<br>${escapeHtml(verein)}</p>`;
+    <p class="sign">Mit sportlichen Grüßen<br><br><br>${escapeHtml(unterzeichner).replace(/\n/g, '<br>')}<br>${escapeHtml(verein)}</p>`;
   printHtml(`Kündigungsbestätigung ${m.vorname} ${m.nachname}`, body);
 }

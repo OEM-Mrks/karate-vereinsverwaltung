@@ -1,6 +1,6 @@
 // Datenbankschema (SQLite). Alle Geldbeträge in Cent (INTEGER), alle Datumswerte als ISO-Text (yyyy-mm-dd).
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -223,6 +223,21 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 CREATE INDEX IF NOT EXISTS idx_docs_tx ON documents(transaction_id);
 
+-- Vorstand und weitere Ämter (Kassenprüfer, Beisitzer …)
+CREATE TABLE IF NOT EXISTS officers (
+  id                   INTEGER PRIMARY KEY,
+  funktion             TEXT NOT NULL,
+  member_id            INTEGER REFERENCES members(id) ON DELETE SET NULL,
+  name                 TEXT,             -- falls kein Mitglied verknüpft ist
+  email                TEXT,
+  telefon              TEXT,
+  gewaehlt_am          TEXT,
+  amtszeit_bis         TEXT,
+  vertretungsberechtigt INTEGER NOT NULL DEFAULT 0,  -- Vorstand nach § 26 BGB
+  notiz                TEXT,
+  sort                 INTEGER NOT NULL DEFAULT 0
+);
+
 -- Kontoauszüge (PDF) je Konto, Jahr und Monat
 CREATE TABLE IF NOT EXISTS statements (
   id             INTEGER PRIMARY KEY,
@@ -340,6 +355,11 @@ export type Rule = {
   id: number; name: string; prioritaet: number; aktiv: number; iban: string | null; text_enthaelt: string | null;
   richtung: 'ein' | 'aus' | 'beide'; betrag_min_cent: number | null; betrag_max_cent: number | null;
   category_id: number | null; partner_id: number | null; member_id: number | null; treffer: number;
+};
+
+export type Officer = {
+  id: number; funktion: string; member_id: number | null; name: string | null; email: string | null; telefon: string | null;
+  gewaehlt_am: string | null; amtszeit_bis: string | null; vertretungsberechtigt: number; notiz: string | null; sort: number;
 };
 
 export type Statement = {

@@ -8,6 +8,7 @@ import { buildReport, reportToCSV, shiftYear, type ReportLine } from '../lib/rep
 import { Badge, DateInput, PageHeader, YearSelect } from '../components/ui';
 import { CalibrateDialog } from '../components/Calibrate';
 import { isCalibrated } from '../lib/bank';
+import { namesFor } from '../lib/verein';
 
 type Period = 'jahr' | 'bisHeute' | 'q1' | 'q2' | 'q3' | 'q4' | 'h1' | 'h2' | 'monat' | 'frei';
 
@@ -222,7 +223,9 @@ export function ReportPage() {
       </div>
       {checkpointFor && <CalibrateDialog account={checkpointFor} datum={r.bis} onClose={() => setCheckpointFor(null)} />}
       <div className="print-only signature">
-        <div>Ort, Datum</div><div>Kassenwart/in</div><div>Kassenprüfer/in</div>
+        <div>Ort, Datum</div>
+        <div>{namesFor('Kassenwart/in')[0] ? `${namesFor('Kassenwart/in')[0]} (Kassenwart/in)` : 'Kassenwart/in'}</div>
+        {(namesFor('Kassenprüfer/in').length ? namesFor('Kassenprüfer/in') : ['']).map((n, i) => <div key={i}>{n ? `${n} (Kassenprüfer/in)` : 'Kassenprüfer/in'}</div>)}
       </div>
     </div>
   );

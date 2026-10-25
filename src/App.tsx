@@ -15,6 +15,7 @@ import { ReportPage } from './pages/Report';
 import { DataPage } from './pages/DataPage';
 import { AuditPage } from './pages/Audit';
 import { StatementsPage } from './pages/Statements';
+import { VereinPage } from './pages/Verein';
 
 type NavItem = { id: string; label: string; icon: string };
 
@@ -38,6 +39,7 @@ const NAV: { group: string | null; items: NavItem[] }[] = [
     { id: 'kassenpruefung', label: 'Kassenprüfung', icon: '✓' },
   ] },
   { group: 'Stammdaten', items: [
+    { id: 'verein', label: 'Verein & Vorstand', icon: '🏛' },
     { id: 'partner', label: 'Lieferanten & Partner', icon: '🏷' },
     { id: 'kategorien', label: 'Kategorien (SKR04)', icon: '▤' },
     { id: 'regeln', label: 'Zuordnungsregeln', icon: '⚡' },
@@ -52,7 +54,8 @@ function brandName(name: string): string {
 }
 
 function NavGroups({ page }: { page: string | undefined }) {
-  const [closed, setClosed] = useLocalState<string[]>('nav.closed', []);
+  // Selten benötigte Bereiche sind anfangs zugeklappt
+  const [closed, setClosed] = useLocalState<string[]>('nav.closed.v2', ['Dateiablage', 'Jahresabschluss', 'Stammdaten', 'System']);
   return (
     <>
       {NAV.map(({ group, items }) => {
@@ -106,6 +109,7 @@ function Shell({ onWiped }: { onWiped: () => void }) {
     case 'belege': content = <DocumentsPage />; break;
     case 'guv': content = <ReportPage />; break;
     case 'kassenpruefung': content = <AuditPage />; break;
+    case 'verein': content = <VereinPage />; break;
     case 'partner': content = <PartnersPage />; break;
     case 'kategorien': content = <CategoriesPage />; break;
     case 'regeln': content = <RulesPage />; break;
