@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { all, run } from '../db/db';
+import { all, get, run } from '../db/db';
 import type { DocumentMeta } from '../db/schema';
 import { useQuery } from '../hooks';
-import { ACCEPT_DOCS, addDocument, documentBlobUrl, formatSize } from '../lib/docs';
+import { ACCEPT_DOCS, addDocument, belegFehlt, documentBlobUrl, formatSize, setBelegeVollstaendig } from '../lib/docs';
+import { eigenbelegAusBuchung } from '../lib/eigenbeleg';
+import { EigenbelegDialog } from './Eigenbeleg';
 import { formatDate } from '../lib/format';
-import { attempt, Modal, toast } from './ui';
+import { attempt, Badge, Checkbox, Modal, toast } from './ui';
 
 export function DocViewer({ id, onClose, load = documentBlobUrl }: {
   id: number;
@@ -79,10 +81,22 @@ export function DocUpload(props: {
 export function TransactionDocs({ transactionId, belegdatum, partnerId }: { transactionId: number; belegdatum: string; partnerId?: number | null }) {
   const [view, setView] = useState<number | null>(null);
   const [linking, setLinking] = useState(false);
+  const [eigen, setEigen] = useState(false);
   const docs = useQuery(
-    () => all<DocumentMeta>('SELECT id, belegnr, belegdatum, beschreibung, transaction_id, partner_id, dateiname, mime, groesse, created_at FROM documents WHERE transaction_id = ? ORDER BY id', [transactionId]),
+    () => all<DocumentMeta>('SELECT id, belegnr, belegdatum, beschreibung, transaction_id, partner_id, dateiname, mime, groesse, eigenbeleg, created_at FROM documents WHERE transaction_id = ? ORDER BY id', [transactionId]),
     [transactionId],
   );
+  // Erwartet wird ein Beleg je belegpflichtiger (gespeicherter) Splitzeile
+  const status = useQuery(
+    () => get<{ soll: number; vollstaendig: number }>(
+      `SELECT (SELECT COUNT(*) FROM allocations a JOIN categories c ON c.id = a.category_id WHERE a.transaction_id = t.id AND c.beleg_pflicht = 1) AS soll,
+              t.belege_vollstaendig AS vollstaendig
+       FROM transactions t WHERE t.id = ?`,
+      [transactionId],
+    ) ?? { soll: 0, vollstaendig: 0 },
+    [transactionId],
+  );
+  const fehlt = belegFehlt(status.soll, docs.length, status.vollstaendig);
   const unlinked = useQuery(
     () => (linking ? all<DocumentMeta>('SELECT id, belegnr, belegdatum, beschreibung, dateiname, groesse FROM documents WHERE transaction_id IS NULL ORDER BY id DESC') : []),
     [linking],
@@ -102,12 +116,27 @@ export function TransactionDocs({ transactionId, belegdatum, partnerId }: { tran
       {docs.map((d) => (
         <div key={d.id} className="doc-row">
           <button className="link" onClick={() => setView(d.id)}>📄 {d.belegnr} · {d.dateiname}</button>
+          {d.eigenbeleg ? <Badge tone="info">Eigenbeleg</Badge> : null}
           <span className="muted small">{formatSize(d.groesse)}</span>
           <button className="link danger" onClick={() => attempt(() => run('UPDATE documents SET transaction_id = NULL WHERE id = ?', [d.id]), 'Verknüpfung gelöst')}>lösen</button>
         </div>
       ))}
-      <DocUpload onFiles={upload} compact />
-      <button className="link small" onClick={() => setLinking(!linking)}>{linking ? 'Auswahl schließen' : 'Vorhandenen, nicht verknüpften Beleg auswählen …'}</button>
+      <DocUpload onFiles={upload} compact label={docs.length ? 'Weiteren Beleg hierher ziehen oder klicken' : undefined} />
+      {(status.soll > 0 || docs.length > 0) && (
+        <div className="doc-status small">
+          {status.soll > 1 && !status.vollstaendig && <span className={fehlt ? 'warn-text' : 'muted'}>{docs.length} von {status.soll} Belegen (Splitbuchung)</span>}
+          {status.soll === 1 && fehlt && <span className="warn-text">Beleg fehlt</span>}
+          <Checkbox
+            checked={!!status.vollstaendig}
+            onChange={(v) => attempt(() => setBelegeVollstaendig(transactionId, v), v ? 'Als vollständig markiert' : undefined)}
+            label="Alle Belege erfasst"
+          />
+        </div>
+      )}
+      <div className="actions">
+        <button className="link small" onClick={() => setEigen(true)}>✎ Eigenbeleg erstellen …</button>
+        <button className="link small" onClick={() => setLinking(!linking)}>{linking ? 'Auswahl schließen' : 'Vorhandenen, nicht verknüpften Beleg auswählen …'}</button>
+      </div>
       {linking && (
         <div className="doc-pick">
           {unlinked.length ? unlinked.map((d) => (
@@ -118,6 +147,7 @@ export function TransactionDocs({ transactionId, belegdatum, partnerId }: { tran
         </div>
       )}
       {view && <DocViewer id={view} onClose={() => setView(null)} />}
+      {eigen && <EigenbelegDialog initial={eigenbelegAusBuchung(transactionId)} onClose={() => setEigen(false)} onCreated={setView} />}
     </div>
   );
 }

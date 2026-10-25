@@ -6,7 +6,7 @@ import {
   auditItems, auditSummary, clearCheck, exportProtocol, getAudit, importProtocol, setAnswer, setCheck, startAudit, updateAudit,
   type AuditItem, type AuditSummary,
 } from '../lib/audit';
-import { documentBlobUrl } from '../lib/docs';
+import { belegFehlt, documentBlobUrl } from '../lib/docs';
 import { formatDate, formatEUR, formatIBAN, todayISO } from '../lib/format';
 import { auditPdf } from '../lib/pdfDocs';
 import { PdfPreview } from '../components/PdfPreview';
@@ -266,7 +266,12 @@ function Protocol({ audit, items, onOpen }: { audit: Audit; items: AuditItem[]; 
                 <td className="nowrap"><button className="link" onClick={() => onOpen(i.id)}>{formatDate(i.buchungsdatum)}</button></td>
                 <td><strong>{i.gegen_name || i.buchungstext}</strong><div className="muted small clamp">{i.verwendungszweck}</div></td>
                 <td className="small">{i.zuordnung.map((z) => z.kat).filter(Boolean).join(', ') || '–'}</td>
-                <td className="small">{i.belege.map((b) => b.belegnr).join(', ') || (i.zuordnung.some((z) => z.beleg_pflicht) ? <Badge tone="bad">fehlt</Badge> : '–')}</td>
+                <td className="small">
+                  {i.belege.map((b) => b.belegnr).join(', ')}{' '}
+                  {belegFehlt(i.zuordnung.filter((z) => z.beleg_pflicht).length, i.belege.length, i.belege_vollstaendig)
+                    ? <Badge tone="bad">{i.belege.length ? 'unvollständig' : 'fehlt'}</Badge>
+                    : !i.belege.length && '–'}
+                </td>
                 <td className={`num ${i.betrag_cent < 0 ? 'neg' : 'pos'}`}>{formatEUR(i.betrag_cent)}</td>
                 <td>{i.check ? <Badge tone={i.check.status === 'ok' ? 'ok' : 'warn'} title={i.check.geprueft_am}>{i.check.status === 'ok' ? '✓' : '?'}</Badge> : <span className="muted">–</span>}</td>
                 <td className="small">

@@ -472,3 +472,11 @@ main { padding: 26px 32px 60px; max-width: 1400px; }
 .logo-card { display: flex; gap: 18px; align-items: flex-start; }
 .logo-preview { width: 96px; height: 96px; border-radius: 12px; background: var(--surface-2); display: grid; place-items: center; flex-shrink: 0; overflow: hidden; }
 .logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* Auswahl-Chips (z. B. Begründungen für Eigenbelege) */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); }
+.doc-status { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.warn-text { color: var(--warn); font-weight: 600; }
+.table.compact td, .table.compact th { padding: 4px 6px; }
+.actions-cell { white-space: nowrap; text-align: right; }

@@ -163,6 +163,20 @@ export function loadDemo() {
         }
       }
     }
+    // Wiederkehrende Zahlungen: Verbandsbeitrag (ohne Rechnung → Eigenbeleg) und Versicherung
+    const verband = run(
+      `INSERT INTO recurring(name, partner_id, category_id, rhythmus, faellig_monat, ab_jahr, eigenbeleg, eigenbeleg_grund)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      ['Jahresbeitrag Landesverband', dkv, cat('6420'), 'jaehrlich', 2, lastYear, 1,
+        'Beitrag an den Landesverband – keine Rechnung, Zahlung laut Beitragsordnung (15 € je Mitglied).'],
+    );
+    run('INSERT INTO recurring_amounts(recurring_id, ab_jahr, betrag_cent) VALUES (?,?,?)', [verband, lastYear, members.length * 1500]);
+    const police = run('INSERT INTO recurring(name, partner_id, category_id, rhythmus, faellig_monat, ab_jahr) VALUES (?,?,?,?,?,?)',
+      ['Vereinsversicherung (Haftpflicht/Unfall)', vers, cat('6400'), 'jaehrlich', 1, lastYear]);
+    run('INSERT INTO recurring_amounts(recurring_id, ab_jahr, betrag_cent) VALUES (?,?,?)', [police, lastYear, 38900]);
+    run(`INSERT INTO recurring_payments(recurring_id, jahr, periode, bezahlt_am, betrag_cent, transaction_id)
+         SELECT ?, ?, 1, buchungsdatum, -betrag_cent, id FROM transactions WHERE buchungsdatum BETWEEN ? AND ? AND gegen_name = ? LIMIT 1`,
+      [police, lastYear, `${lastYear}-01-01`, `${lastYear}-12-31`, partner(vers).name]);
     run('INSERT INTO balance_checkpoints(account_id, datum, saldo_cent, notiz) SELECT ?, ?, ?, ?', [acc, `${lastYear}-12-31`, 0, 'Jahreskontoauszug']);
   });
   autoAssign();

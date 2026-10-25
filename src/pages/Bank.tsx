@@ -7,6 +7,7 @@ import {
   type AllocationInput, type TxStatus,
 } from '../lib/bank';
 import { formatDate, formatEUR, formatIBAN, normalizeIBAN, todayISO, yearOf } from '../lib/format';
+import { belegFehlt } from '../lib/docs';
 import { categories, categoryLabel, categoryOptions, memberName, memberOptions, partnerOptions } from '../lib/lookups';
 import { TransactionDocs } from '../components/Docs';
 import { QuickMemberDialog, QuickPartnerDialog } from '../components/QuickCreate';
@@ -71,7 +72,7 @@ function loadRows(year: number, accountId: number | null): Row[] {
   return txs.map((t) => {
     const a = byTx.get(t.id) ?? [];
     const d = docs.get(t.id) ?? 0;
-    return { ...t, allocs: a, docs: d, status: txStatus(t, a), belegFehlt: d === 0 && a.some((x) => x.cat?.beleg_pflicht) };
+    return { ...t, allocs: a, docs: d, status: txStatus(t, a), belegFehlt: belegFehlt(a.filter((x) => x.cat?.beleg_pflicht).length, d, t.belege_vollstaendig) };
   });
 }
 
@@ -197,7 +198,7 @@ function TransactionList() {
                       </div>
                     ))}
                   </td>
-                  <td>{r.docs > 0 ? <span title={`${r.docs} Beleg(e)`}>📄</span> : r.belegFehlt ? <span title="Beleg fehlt" className="warn-icon">⚠︎</span> : null}</td>
+                  <td>{r.belegFehlt ? <span title={r.docs ? `${r.docs} Beleg(e) – weitere fehlen` : 'Beleg fehlt'} className="warn-icon">⚠︎</span> : r.docs > 0 ? <span title={`${r.docs} Beleg(e)`}>📄</span> : null}</td>
                   <td className={`num nowrap ${r.betrag_cent < 0 ? 'neg' : 'pos'}`}>{formatEUR(r.betrag_cent)}</td>
                   <td><Badge tone={STATUS[r.status].tone} title={r.allocs.find((a) => a.auto)?.auto ?? undefined}>{STATUS[r.status].label}</Badge></td>
                 </tr>

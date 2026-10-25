@@ -1,6 +1,6 @@
 // Datenbankschema (SQLite). Alle Geldbeträge in Cent (INTEGER), alle Datumswerte als ISO-Text (yyyy-mm-dd).
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   hash             TEXT UNIQUE,
   geprueft         INTEGER NOT NULL DEFAULT 0,
   notiz            TEXT,
+  belege_vollstaendig INTEGER NOT NULL DEFAULT 0, -- alle Belege erfasst (auch wenn weniger Belege als Splitzeilen)
   created_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(buchungsdatum);
@@ -219,9 +220,50 @@ CREATE TABLE IF NOT EXISTS documents (
   mime           TEXT NOT NULL,
   groesse        INTEGER NOT NULL,
   daten          BLOB NOT NULL,
+  eigenbeleg     INTEGER NOT NULL DEFAULT 0,  -- in der App erzeugter Eigenbeleg (Ersatzbeleg)
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_docs_tx ON documents(transaction_id);
+
+-- Wiederkehrende Zahlungen (Verbandsbeiträge, Versicherungen …)
+CREATE TABLE IF NOT EXISTS recurring (
+  id               INTEGER PRIMARY KEY,
+  name             TEXT NOT NULL,
+  partner_id       INTEGER REFERENCES partners(id) ON DELETE SET NULL,
+  category_id      INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+  richtung         TEXT NOT NULL DEFAULT 'aus' CHECK (richtung IN ('aus','ein')),
+  rhythmus         TEXT NOT NULL DEFAULT 'jaehrlich', -- jaehrlich | halbjaehrlich | quartal | monatlich
+  faellig_monat    INTEGER NOT NULL DEFAULT 1 CHECK (faellig_monat BETWEEN 1 AND 12), -- erste Fälligkeit im Jahr
+  ab_jahr          INTEGER NOT NULL,
+  bis_jahr         INTEGER,
+  eigenbeleg       INTEGER NOT NULL DEFAULT 0,  -- beim Abhaken einen Eigenbeleg erzeugen
+  eigenbeleg_grund TEXT,
+  notiz            TEXT,
+  aktiv            INTEGER NOT NULL DEFAULT 1
+);
+
+-- Betrag je Fälligkeit ab einem Jahr (gilt bis zur nächsten Änderung)
+CREATE TABLE IF NOT EXISTS recurring_amounts (
+  id           INTEGER PRIMARY KEY,
+  recurring_id INTEGER NOT NULL REFERENCES recurring(id) ON DELETE CASCADE,
+  ab_jahr      INTEGER NOT NULL,
+  betrag_cent  INTEGER NOT NULL,
+  UNIQUE (recurring_id, ab_jahr)
+);
+
+-- Erledigte Fälligkeiten (abgehakt), optional mit Buchung und Eigenbeleg
+CREATE TABLE IF NOT EXISTS recurring_payments (
+  id             INTEGER PRIMARY KEY,
+  recurring_id   INTEGER NOT NULL REFERENCES recurring(id) ON DELETE CASCADE,
+  jahr           INTEGER NOT NULL,
+  periode        INTEGER NOT NULL DEFAULT 1,
+  bezahlt_am     TEXT,
+  betrag_cent    INTEGER,
+  transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL,
+  document_id    INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+  notiz          TEXT,
+  UNIQUE (recurring_id, jahr, periode)
+);
 
 -- Vorstand und weitere Ämter (Kassenprüfer, Beisitzer …)
 CREATE TABLE IF NOT EXISTS officers (
@@ -343,7 +385,7 @@ export type Transaction = {
   waehrung: string; gegen_name: string | null; gegen_iban: string | null; gegen_bic: string | null;
   verwendungszweck: string | null; buchungstext: string | null; mandatsreferenz: string | null;
   glaeubiger_id: string | null; e2e_ref: string | null; saldo_cent: number | null;
-  import_id: number | null; hash: string | null; geprueft: number; notiz: string | null; created_at: string;
+  import_id: number | null; hash: string | null; geprueft: number; notiz: string | null; belege_vollstaendig: number; created_at: string;
 };
 
 export type Allocation = {
@@ -379,5 +421,20 @@ export type AuditCheck = {
 
 export type DocumentMeta = {
   id: number; belegnr: string | null; belegdatum: string | null; beschreibung: string | null;
-  transaction_id: number | null; partner_id: number | null; dateiname: string; mime: string; groesse: number; created_at: string;
+  transaction_id: number | null; partner_id: number | null; dateiname: string; mime: string; groesse: number; eigenbeleg: number; created_at: string;
+};
+
+export type Rhythmus = 'jaehrlich' | 'halbjaehrlich' | 'quartal' | 'monatlich';
+
+export type Recurring = {
+  id: number; name: string; partner_id: number | null; category_id: number | null; richtung: 'aus' | 'ein';
+  rhythmus: Rhythmus; faellig_monat: number; ab_jahr: number; bis_jahr: number | null;
+  eigenbeleg: number; eigenbeleg_grund: string | null; notiz: string | null; aktiv: number;
+};
+
+export type RecurringAmount = { id: number; recurring_id: number; ab_jahr: number; betrag_cent: number };
+
+export type RecurringPayment = {
+  id: number; recurring_id: number; jahr: number; periode: number; bezahlt_am: string | null; betrag_cent: number | null;
+  transaction_id: number | null; document_id: number | null; notiz: string | null;
 };

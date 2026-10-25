@@ -183,9 +183,19 @@ export function markExported() {
 
 // ---------- Anlegen / Öffnen ----------
 
+/** Spalten, die nach dem ersten Release hinzukamen – CREATE TABLE IF NOT EXISTS legt sie in alten Dateien nicht an. */
+const ADDED_COLUMNS: [table: string, column: string, definition: string][] = [
+  ['transactions', 'belege_vollstaendig', 'INTEGER NOT NULL DEFAULT 0'],
+  ['documents', 'eigenbeleg', 'INTEGER NOT NULL DEFAULT 0'],
+];
+
 function migrate(d: Database) {
   d.run('PRAGMA foreign_keys = ON');
   d.exec(SCHEMA_SQL);
+  for (const [table, column, definition] of ADDED_COLUMNS) {
+    const cols = d.exec(`PRAGMA table_info(${table})`)[0]?.values.map((r) => r[1]) ?? [];
+    if (!cols.includes(column)) d.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
   d.run(`PRAGMA application_id = ${APPLICATION_ID}`);
   d.run(
     `INSERT INTO meta(key, value) VALUES('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,

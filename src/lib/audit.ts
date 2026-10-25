@@ -4,6 +4,7 @@ import { all, get, run, scalar, tx } from '../db/db';
 import type { Audit, AuditCheck, Transaction } from '../db/schema';
 import { buildReport, type Report } from './report';
 import { isCalibrated } from './bank';
+import { belegFehlt } from './docs';
 import { missingMonths } from './statements';
 
 export type AuditItem = Transaction & {
@@ -88,7 +89,7 @@ export function auditSummary(audit: Audit, items: AuditItem[]): AuditSummary {
   const report = buildReport(audit.jahr);
   const geprueft = items.filter((i) => i.check).length;
   const fragen = items.filter((i) => i.check?.status === 'frage');
-  const ohneBeleg = items.filter((i) => i.zuordnung.some((z) => z.beleg_pflicht) && !i.belege.length).length;
+  const ohneBeleg = items.filter((i) => belegFehlt(i.zuordnung.filter((z) => z.beleg_pflicht).length, i.belege.length, i.belege_vollstaendig)).length;
   const hinweise: { ok: boolean; text: string }[] = [];
   for (const k of report.konten) {
     if (!isCalibrated(k.account)) {

@@ -110,3 +110,20 @@ describe('Kontostand abgleichen', () => {
     expect(scalar('SELECT saldo_cent FROM balance_checkpoints WHERE account_id = ? AND datum = ?', [acc, '2026-01-31'])).toBe(500000);
   });
 });
+
+describe('Migration', () => {
+  it('ergänzt neue Spalten und Tabellen in älteren Datenbanken', () => {
+    run("INSERT INTO accounts(name, anfangsdatum) VALUES ('Giro', '2025-01-01')");
+    run("INSERT INTO transactions(account_id, buchungsdatum, betrag_cent) VALUES (1, '2025-02-01', -100)");
+    // Stand vor Version 0.7: Spalten und Tabellen fehlen
+    run('ALTER TABLE transactions DROP COLUMN belege_vollstaendig');
+    run('ALTER TABLE documents DROP COLUMN eigenbeleg');
+    run('DROP TABLE recurring_payments');
+    run('DROP TABLE recurring_amounts');
+    run('DROP TABLE recurring');
+    openBytes(exportBytes());
+    expect(scalar('SELECT belege_vollstaendig FROM transactions')).toBe(0);
+    expect(all('PRAGMA table_info(documents)').some((c) => c.name === 'eigenbeleg')).toBe(true);
+    expect(scalar('SELECT COUNT(*) FROM recurring')).toBe(0);
+  });
+});

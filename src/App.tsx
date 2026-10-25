@@ -15,6 +15,7 @@ import { ReportPage } from './pages/Report';
 import { DataPage } from './pages/DataPage';
 import { AuditPage } from './pages/Audit';
 import { StatementsPage } from './pages/Statements';
+import { RecurringPage } from './pages/Recurring';
 import { getLogo } from './lib/logo';
 import { VereinPage } from './pages/Verein';
 
@@ -30,6 +31,7 @@ const NAV: { group: string | null; items: NavItem[] }[] = [
   { group: 'Finanzen', items: [
     { id: 'konto', label: 'Buchungen & Konten', icon: '🏦' },
     { id: 'import', label: 'Umsätze importieren (CSV)', icon: '⇪' },
+    { id: 'wiederkehrend', label: 'Wiederkehrende Zahlungen', icon: '↻' },
   ] },
   { group: 'Dateiablage', items: [
     { id: 'auszuege', label: 'Kontoauszüge', icon: '🗂' },
@@ -106,6 +108,7 @@ function Shell({ onWiped }: { onWiped: () => void }) {
     case 'beitraege': content = <FeesPage />; break;
     case 'konto': content = <BankPage txId={id} />; break;
     case 'import': content = <ImportPage />; break;
+    case 'wiederkehrend': content = <RecurringPage />; break;
     case 'auszuege': content = <StatementsPage />; break;
     case 'belege': content = <DocumentsPage />; break;
     case 'guv': content = <ReportPage />; break;

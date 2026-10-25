@@ -5,6 +5,7 @@ import { all } from '../db/db';
 import type { Account, BalanceCheckpoint, Category, Sphaere } from '../db/schema';
 import { SPHAEREN } from '../db/schema';
 import { balanceAt, balanceAtStartOf } from './bank';
+import { fehlendeBelege as fehlendeBelegeListe } from './docs';
 
 export type ReportLine = { category: Category; summe: number; vorjahr: number; anzahl: number };
 
@@ -138,13 +139,7 @@ export function buildReport(year: number, von = `${year}-01-01`, bis = `${year}-
   const kontoBewegung = kontoEnde - kontoAnfang;
   const ergebnis = summeEin - summeAus;
 
-  const fehlendeBelege = all<{ n: number }>(
-    `SELECT COUNT(DISTINCT t.id) AS n FROM transactions t
-     JOIN allocations a ON a.transaction_id = t.id JOIN categories c ON c.id = a.category_id
-     WHERE c.beleg_pflicht = 1 AND t.buchungsdatum BETWEEN ? AND ?
-       AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.transaction_id = t.id)`,
-    [von, bis],
-  )[0]?.n ?? 0;
+  const fehlendeBelege = fehlendeBelegeListe(von, bis).length;
 
   return {
     jahr: year,

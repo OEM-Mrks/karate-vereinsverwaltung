@@ -42,7 +42,8 @@ Browser
 | `transactions` | Kontoumsätze (Datum, Betrag, Gegenpartei, IBAN, Verwendungszweck, Mandat, Gläubiger-ID, End-to-End-Referenz, Saldo) |
 | `allocations` | Zuordnung (Split) eines Umsatzes zu Kategorie / Mitglied / Partner, Beitragsjahr, Herkunft der Automatik |
 | `rules` | Zuordnungsregeln (IBAN, Textmuster, Richtung, Betragsbereich → Kategorie/Partner/Mitglied) |
-| `documents` | Belege als BLOB (PDF/Bild) mit Belegnummer, verknüpft mit Umsatz und Partner |
+| `documents` | Belege als BLOB (PDF/Bild) mit Belegnummer, verknüpft mit Umsatz und Partner; Kennzeichen für Eigenbelege |
+| `recurring`, `recurring_amounts`, `recurring_payments` | Wiederkehrende Zahlungen, Betrag ab Jahr, abgehakte Fälligkeiten mit Buchung und Eigenbeleg |
 
 ## Fachlogik
 
@@ -56,6 +57,10 @@ Beitragskonten werden ab einem einstellbaren Jahr geführt, damit beim Umstieg k
 **CSV-Import:** UTF-8, sonst Windows-1252 · Trennzeichen nach konsistenter Spaltenzahl · Kopfzeile = Zeile mit den meisten bekannten Spaltennamen · Spaltenzuordnung über normalisierte Synonyme · Betrag mit Vorzeichen oder Soll/Haben oder S/H-Kennzeichen · Dezimaltrennzeichen per Mehrheit · vorgemerkte Umsätze optional übersprungen · Fingerabdruck aus Konto, Datum, Betrag, IBAN, Verwendungszweck und laufender Nummer identischer Zeilen gegen Duplikate.
 
 **Automatische Zuordnung (Reihenfolge):** Regeln mit Priorität < 500 → IBAN Mitglied (mehrere Mitglieder = Familie, Aufteilung nach Beitrag) → IBAN Partner → Mitgliedsnummer im Verwendungszweck → Vor- und Nachname im Text bzw. Kontoinhaber → Partnername → übrige Regeln (z. B. Kontoführung, Zinsen).
+
+**Belegpflicht:** Erwartet wird je belegpflichtiger Zuordnungszeile ein Beleg. Fehlend = belegpflichtig, nicht als „Alle Belege erfasst“ markiert und weniger Belege als Zeilen.
+
+**Wiederkehrende Zahlungen:** Betrag je Fälligkeit aus dem letzten Eintrag „ab Jahr“ ≤ Jahr. Vorschlag einer Buchung: richtige Richtung, Buchungsdatum 4 Monate vor bis 7 Monate nach Fälligkeit, Partner per Zuordnung, IBAN oder Name, noch keiner Fälligkeit zugeordnet; exakter Betrag zuerst, dann Nähe zum Fälligkeitsmonat.
 
 **GuV:** Summe der Zuordnungen je Kategorie nach Buchungsdatum (Zuflussprinzip), gegliedert nach steuerlichem Bereich. Neutrale Kategorien und nicht zugeordnete Beträge erscheinen getrennt. Abstimmung: Kontostand Anfang + Ergebnis + neutral + nicht zugeordnet = Kontostand Ende (berechnet), Vergleich mit Kontostand laut Auszug.
 
