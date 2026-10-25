@@ -296,9 +296,10 @@ export function suggest(t: Transaction, ctx: MatchCtx): AllocationInput[] | null
 }
 
 /** Ordnet alle (oder die angegebenen) noch nicht zugeordneten Buchungen automatisch zu. */
-export function autoAssign(ids?: number[]): { geprueft: number; zugeordnet: number } {
+export function autoAssign(ids?: number[], exclude: number[] = []): { geprueft: number; zugeordnet: number } {
   const ctx = loadMatchCtx();
-  const where = ids ? `AND t.id IN (${ids.map(Number).join(',') || '0'})` : '';
+  let where = ids ? `AND t.id IN (${ids.map(Number).join(',') || '0'})` : '';
+  if (exclude.length) where += ` AND t.id NOT IN (${exclude.map(Number).join(',')})`;
   const open = all<Transaction>(
     `SELECT t.* FROM transactions t WHERE NOT EXISTS (SELECT 1 FROM allocations a WHERE a.transaction_id = t.id) ${where}`,
   );

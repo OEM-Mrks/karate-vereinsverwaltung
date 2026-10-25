@@ -5,6 +5,7 @@ import { useQuery } from '../hooks';
 import { formatSize } from '../lib/docs';
 import { earliestExitDate, formatDate, todayISO } from '../lib/format';
 import { categoryOptions } from '../lib/lookups';
+import { CHECK_FIELDS, requiredFields } from '../lib/completeness';
 import { attempt, Field, PageHeader, Select, TextArea, TextInput, toast } from '../components/ui';
 
 export function DataPage({ onWiped }: { onWiped: () => void }) {
@@ -14,6 +15,7 @@ export function DataPage({ onWiped }: { onWiped: () => void }) {
     unterzeichner: getSetting('verein_unterzeichner'),
     frist: Number(getSetting('kuendigungsfrist_monate', '3')) || 3,
     startYear: Number(getSetting('beitragskonto_ab', '0')) || 0,
+    pflicht: requiredFields(),
     beitragCat: Number(getSetting('beitrag_category_id')) || null,
     lastExport: getSetting('last_export_at'),
     changes: Number(getSetting('changes_since_export', '0')),
@@ -109,6 +111,23 @@ export function DataPage({ onWiped }: { onWiped: () => void }) {
           <Field label="Kategorie für Mitgliedsbeiträge" hint="Für die automatische Zuordnung">
             <Select value={s.beitragCat} onChange={(v) => v && attempt(() => setSetting('beitrag_category_id', v))} options={categoryOptions((c) => c.typ === 'einnahme')} />
           </Field>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Pflichtangaben für Mitglieder</h3>
+        <p className="muted small">Fehlt eine dieser Angaben, erscheint das Mitglied unter „Mitglieder → Unvollständig". Anlegen geht trotzdem schon mit dem Namen allein.</p>
+        <div className="check-grid">
+          {CHECK_FIELDS.map((f) => (
+            <label key={f.id} className="checkbox">
+              <input
+                type="checkbox"
+                checked={s.pflicht.includes(f.id)}
+                onChange={(e) => attempt(() => setSetting('pflichtfelder', JSON.stringify(e.target.checked ? [...s.pflicht, f.id] : s.pflicht.filter((x) => x !== f.id))))}
+              />
+              <span>{f.label}{f.id === 'erziehungsberechtigte' ? ' (nur bei Minderjährigen)' : ''}</span>
+            </label>
+          ))}
         </div>
       </div>
 

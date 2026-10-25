@@ -25,7 +25,8 @@ export function categoryOptions(filter?: (c: Category) => boolean) {
 }
 
 export function memberName(m: Pick<Member, 'vorname' | 'nachname'> | undefined | null): string {
-  return m ? `${m.nachname}, ${m.vorname}` : '–';
+  if (!m) return '–';
+  return m.vorname?.trim() ? `${m.nachname}, ${m.vorname}` : m.nachname;
 }
 
 export function memberOptions() {

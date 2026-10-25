@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { all, get, run, scalar, tx } from '../db/db';
-import type { Account, Allocation, BalanceCheckpoint, Category, Member, Transaction } from '../db/schema';
+import type { Account, Allocation, BalanceCheckpoint, Category, Member, Partner, Transaction } from '../db/schema';
 import { navigate, useLocalState, useQuery } from '../hooks';
 import {
   autoAssign, balanceAt, createRuleFromTransaction, setAllocations, txStatus, type AllocationInput, type TxStatus,
@@ -8,11 +8,13 @@ import {
 import { formatDate, formatEUR, formatIBAN, normalizeIBAN, todayISO, yearOf } from '../lib/format';
 import { categories, categoryLabel, categoryOptions, memberName, memberOptions, partnerOptions } from '../lib/lookups';
 import { TransactionDocs } from '../components/Docs';
+import { QuickMemberDialog, QuickPartnerDialog } from '../components/QuickCreate';
+import { SetupByPayer } from './Setup';
 import {
   attempt, Badge, Checkbox, DateInput, Empty, Field, Modal, MoneyInput, PageHeader, Select, Stat, Tabs, TextArea, TextInput, toast, YearSelect,
 } from '../components/ui';
 
-type Tab = 'buchungen' | 'konten' | 'importe';
+type Tab = 'buchungen' | 'einrichtung' | 'konten' | 'importe';
 
 export function BankPage({ txId }: { txId?: number }) {
   const [tab, setTab] = useLocalState<Tab>('bank.tab', 'buchungen');
@@ -23,8 +25,9 @@ export function BankPage({ txId }: { txId?: number }) {
         subtitle="Alle Einnahmen und Ausgaben laufen über das Vereinskonto – jede Buchung wird einer Kategorie zugeordnet."
         actions={<button className="primary" onClick={() => navigate('import')}>Kontoauszug (CSV) importieren</button>}
       />
-      <Tabs<Tab> value={tab} onChange={setTab} tabs={[{ id: 'buchungen', label: 'Buchungen' }, { id: 'konten', label: 'Konten & Kontostände' }, { id: 'importe', label: 'Importe' }]} />
+      <Tabs<Tab> value={tab} onChange={setTab} tabs={[{ id: 'buchungen', label: 'Buchungen' }, { id: 'einrichtung', label: 'Offene nach Zahlungspartner' }, { id: 'konten', label: 'Konten & Kontostände' }, { id: 'importe', label: 'Importe' }]} />
       {tab === 'buchungen' && <TransactionList />}
+      {tab === 'einrichtung' && <SetupByPayer />}
       {tab === 'konten' && <Accounts />}
       {tab === 'importe' && <Imports />}
       {txId != null && <AssignDialog key={txId} id={txId} onClose={() => navigate('konto')} />}
@@ -203,7 +206,8 @@ function ManualTransaction({ accounts, onClose }: { accounts: Account[]; onClose
 // ---------- Zuordnung ----------
 
 type Line = AllocationInput & { key: number };
-let lineKey = 0;
+// Neue Zeilen bekommen Schlüssel oberhalb aller Datenbank-IDs, damit Schlüssel über Neuzeichnungen stabil bleiben
+let lineKey = 1_000_000_000;
 
 export function AssignDialog({ id, onClose }: { id: number; onClose: () => void }) {
   const t = useQuery(() => get<Transaction>('SELECT * FROM transactions WHERE id = ?', [id]), [id]);
@@ -213,6 +217,8 @@ export function AssignDialog({ id, onClose }: { id: number; onClose: () => void 
   const memOpts = useQuery(() => memberOptions());
   const partOpts = useQuery(() => partnerOptions());
   const members = useQuery(() => new Map(all<Member>('SELECT * FROM members').map((m) => [m.id, m])));
+  const partners = useQuery(() => new Map(all<Partner>('SELECT * FROM partners').map((p) => [p.id, p])));
+  const [quick, setQuick] = useState<{ kind: 'member' | 'partner'; key: number } | null>(null);
   const [lines, setLines] = useState<Line[] | null>(null);
   const [geprueft, setGeprueft] = useState<boolean | null>(null);
   const [notiz, setNotiz] = useState<string | null>(null);
@@ -225,15 +231,33 @@ export function AssignDialog({ id, onClose }: { id: number; onClose: () => void 
   const current: Line[] =
     lines ??
     (existing.length
-      ? existing.map((a) => ({ ...a, key: ++lineKey }))
-      : [{ key: ++lineKey, category_id: null, member_id: null, partner_id: null, betrag_cent: t.betrag_cent, beitragsjahr: null }]);
+      ? existing.map((a) => ({ ...a, key: a.id }))
+      : [{ key: -1, category_id: null, member_id: null, partner_id: null, betrag_cent: t.betrag_cent, beitragsjahr: null }]);
   const update = (key: number, patch: Partial<Line>) => setLines(current.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const sum = current.reduce((s, l) => s + (l.betrag_cent || 0), 0);
   const rest = t.betrag_cent - sum;
   const memberLine = current.find((l) => l.member_id);
   const memberWithoutIban = memberLine ? members.get(memberLine.member_id!) : undefined;
   const offerIban = !!iban && !!memberWithoutIban && !memberWithoutIban.iban;
-  const offerRule = !!iban && !current.some((l) => l.member_id) && current.length === 1 && !!current[0].category_id;
+  // Hat der Partner diese IBAN schon, ist keine extra Regel nötig
+  const partnerHasIban = current.some((l) => l.partner_id && normalizeIBAN(partners.get(l.partner_id)?.iban) === iban);
+  const offerRule = !!iban && !partnerHasIban && !current.some((l) => l.member_id) && current.length === 1 && !!current[0].category_id;
+  const beitragCat = () => Number(scalar("SELECT value FROM meta WHERE key='beitrag_category_id'")) || null;
+  const created = (kind: 'member' | 'partner', key: number, newId: number, others: boolean) => {
+    setQuick(null);
+    if (kind === 'member') {
+      const l = current.find((x) => x.key === key);
+      update(key, { member_id: newId, category_id: l?.category_id ?? beitragCat() });
+    } else {
+      const p = get<Partner>('SELECT * FROM partners WHERE id = ?', [newId]);
+      const l = current.find((x) => x.key === key);
+      update(key, { partner_id: newId, category_id: l?.category_id ?? p?.default_category_id ?? null });
+    }
+    if (others) {
+      const r = autoAssign(undefined, [id]);
+      if (r.zugeordnet) toast(r.zugeordnet === 1 ? '1 weitere offene Buchung automatisch zugeordnet' : `${r.zugeordnet} weitere offene Buchungen automatisch zugeordnet`, 'info');
+    }
+  };
   const save = (next: boolean) => {
     const ok = attempt(() =>
       tx(() => {
@@ -312,10 +336,10 @@ export function AssignDialog({ id, onClose }: { id: number; onClose: () => void 
                 <Select value={l.category_id} onChange={(v) => update(l.key, { category_id: v })} empty="– Kategorie wählen –" options={catOpts} />
               </Field>
               <Field label="Mitglied">
-                <Select value={l.member_id} onChange={(v) => update(l.key, { member_id: v, category_id: v && !l.category_id ? Number(scalar("SELECT value FROM meta WHERE key='beitrag_category_id'")) || null : l.category_id })} empty="–" options={memOpts} />
+                <Select value={l.member_id} onChange={(v) => update(l.key, { member_id: v, category_id: v && !l.category_id ? beitragCat() : l.category_id })} empty="–" options={memOpts} />
               </Field>
               <Field label="Lieferant / Partner">
-                <Select value={l.partner_id} onChange={(v) => update(l.key, { partner_id: v })} empty="–" options={partOpts} />
+                <Select value={l.partner_id} onChange={(v) => update(l.key, { partner_id: v, category_id: v && !l.category_id ? partners.get(v)?.default_category_id ?? null : l.category_id })} empty="–" options={partOpts} />
               </Field>
               <Field label="Betrag"><MoneyInput value={l.betrag_cent} onChange={(v) => update(l.key, { betrag_cent: v ?? 0 })} /></Field>
               {l.member_id && cat?.mitgliedskonto ? (
@@ -323,6 +347,10 @@ export function AssignDialog({ id, onClose }: { id: number; onClose: () => void 
                   <input type="number" value={l.beitragsjahr ?? yearOf(t.buchungsdatum)} onChange={(e) => update(l.key, { beitragsjahr: Number(e.target.value) || null })} />
                 </Field>
               ) : <div />}
+              <div className="alloc-new">
+                <button className="link small" onClick={() => setQuick({ kind: 'member', key: l.key })}>+ neues Mitglied</button>
+                <button className="link small" onClick={() => setQuick({ kind: 'partner', key: l.key })}>+ neuer Lieferant/Partner</button>
+              </div>
               <div className="alloc-actions">
                 {current.length > 1 && <button className="link danger" onClick={() => setLines(current.filter((x) => x.key !== l.key))}>entfernen</button>}
               </div>
@@ -347,6 +375,12 @@ export function AssignDialog({ id, onClose }: { id: number; onClose: () => void 
         </div>
       )}
 
+      {quick?.kind === 'member' && (
+        <QuickMemberDialog tx={t} onClose={() => setQuick(null)} onCreated={(newId, others) => created('member', quick.key, newId, others)} />
+      )}
+      {quick?.kind === 'partner' && (
+        <QuickPartnerDialog tx={t} categoryId={current.find((x) => x.key === quick.key)?.category_id} onClose={() => setQuick(null)} onCreated={(newId, others) => created('partner', quick.key, newId, others)} />
+      )}
       <div className="grid-2 mt">
         <div>
           <h3>Belege</h3>

@@ -11,6 +11,7 @@ import {
   attempt, Badge, DateInput, Empty, Field, GradeBadge, Modal, MoneyInput, PageHeader, Select, Tabs, TextInput,
 } from '../components/ui';
 import { MemberForm } from './Members';
+import { missingFields } from '../lib/completeness';
 
 type Tab = 'stammdaten' | 'beitraege' | 'pruefungen';
 
@@ -50,6 +51,11 @@ export function MemberDetail({ id }: { id: number }) {
           <button className="primary" onClick={() => setEdit(true)}>Bearbeiten</button>
         </>}
       />
+      {missingFields(m).length > 0 && (
+        <div className="callout warn">
+          Fehlende Angaben: {missingFields(m).join(', ')}. <button className="link" onClick={() => setEdit(true)}>Jetzt ergänzen</button>
+        </div>
+      )}
       <Tabs<Tab>
         value={tab}
         onChange={setTab}

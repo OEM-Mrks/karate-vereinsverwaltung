@@ -306,6 +306,7 @@ main { padding: 26px 32px 60px; max-width: 1400px; }
 }
 .alloc-line .field.span-2 { grid-column: auto; }
 .alloc-actions { padding-bottom: 8px; }
+.alloc-new { grid-column: 1 / -1; display: flex; gap: 16px; margin-top: -4px; }
 
 .dropzone {
   border: 2px dashed var(--border); border-radius: var(--radius); padding: 18px; text-align: center;
@@ -406,3 +407,10 @@ main { padding: 26px 32px 60px; max-width: 1400px; }
   .signature div { border-top: 1px solid #000; padding-top: 4px; font-size: 10px; }
   .report-table .section td { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ---------- Ersteinrichtung & Vollständigkeit ---------- */
+.setup-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.small-btn { padding: 4px 9px; font-size: 12px; }
+.setup-table td:first-child { max-width: 340px; }
+.missing { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 2px 16px; }

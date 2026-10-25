@@ -7,6 +7,7 @@ import { balanceBefore, isActive, loadFeeContext, yearSummary } from '../lib/fee
 import { earliestExitDate, formatDate, formatEUR, todayISO } from '../lib/format';
 import { buildReport } from '../lib/report';
 import { memberName } from '../lib/lookups';
+import { missingFields, requiredFields } from '../lib/completeness';
 import { PageHeader, Stat } from '../components/ui';
 
 export function Dashboard() {
@@ -37,7 +38,9 @@ export function Dashboard() {
     const gradeCounts = GRADES.map((g) => ({ g, n: active.filter((m) => m.grad === g.id).length })).filter((x) => x.n);
     const lastTx = scalar<string>('SELECT MAX(buchungsdatum) FROM transactions');
     const changes = Number(getSetting('changes_since_export', '0'));
-    return { members, active, offenFaellig, debtors, saldo, open, r, upcomingExits, recentJoins, gradeCounts, lastTx, accounts, changes };
+    const req = requiredFields();
+    const incomplete = members.filter((m) => (!m.austritt || m.austritt >= today) && missingFields(m, req).length).length;
+    return { members, active, offenFaellig, debtors, saldo, open, r, upcomingExits, recentJoins, gradeCounts, lastTx, accounts, changes, incomplete };
   });
   const frist = Number(getSetting('kuendigungsfrist_monate', '3')) || 3;
   const maxGrade = Math.max(1, ...d.gradeCounts.map((x) => x.n));
@@ -58,10 +61,11 @@ export function Dashboard() {
           <ul className="todo">
             {d.changes > 0 && <li className="warn"><a href="#/daten">💾 {d.changes} Änderungen seit der letzten Sicherung – jetzt sichern</a></li>}
             {!d.accounts.length && <li><a href="#/import">⇪ Ersten Kontoauszug (CSV) importieren</a></li>}
-            {d.open > 0 && <li><a href="#/konto" onClick={() => { try { localStorage.setItem('vv:bank.status', '"offen"'); } catch { /* egal */ } }}>🔗 {d.open} Buchungen noch nicht zugeordnet</a></li>}
+            {d.open > 0 && <li><a href="#/konto" onClick={() => { try { localStorage.setItem('vv:bank.tab', '"einrichtung"'); } catch { /* egal */ } }}>🔗 {d.open} Buchungen noch nicht zugeordnet</a></li>}
+            {d.incomplete > 0 && <li><a href="#/mitglieder" onClick={() => { try { localStorage.setItem('vv:members.filter', '"unvollstaendig"'); } catch { /* egal */ } }}>👤 {d.incomplete} Mitglieder mit fehlenden Angaben</a></li>}
             {d.r.fehlendeBelege > 0 && <li><a href="#/belege">📄 {d.r.fehlendeBelege} Buchungen {year} ohne Beleg</a></li>}
             {d.members.length === 0 && <li><a href="#/mitglieder">👤 Mitglieder anlegen</a></li>}
-            {d.changes === 0 && d.open === 0 && d.r.fehlendeBelege === 0 && d.accounts.length > 0 && <li className="ok">✓ Alles erledigt</li>}
+            {d.changes === 0 && d.open === 0 && d.r.fehlendeBelege === 0 && d.incomplete === 0 && d.accounts.length > 0 && <li className="ok">✓ Alles erledigt</li>}
           </ul>
           <div className="callout">
             <strong>Kündigung heute eingehend:</strong> frühester Austritt zum <strong>{formatDate(earliestExitDate(today, frist))}</strong>

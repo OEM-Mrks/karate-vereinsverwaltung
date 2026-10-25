@@ -299,6 +299,13 @@ function ImportDone({ r, onAnother }: { r: ImportResult & { auto: number; accoun
           ) : null}
         </div>
       )}
+      {offen > 0 && (
+        <div className="callout">
+          <strong>Tipp für die Ersteinrichtung:</strong> Unter „Offene nach Zahlungspartner" legst du mit einem Klick pro Zahler neue Mitglieder oder Lieferanten an –
+          alle ihre Buchungen werden sofort zugeordnet, künftige automatisch.
+          <div className="mt"><button onClick={() => { try { localStorage.setItem('vv:bank.tab', JSON.stringify('einrichtung')); } catch { /* egal */ } navigate('konto'); }}>Offene nach Zahlungspartner einrichten</button></div>
+        </div>
+      )}
       <div className="actions mt">
         <button onClick={onAnother}>Weitere Datei importieren</button>
         <button className="primary" onClick={() => {

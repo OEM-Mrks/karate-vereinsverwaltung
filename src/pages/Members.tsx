@@ -6,13 +6,15 @@ import { navigate, useLocalState, useQuery } from '../hooks';
 import { balanceBefore, isActive, loadFeeContext, yearSummary, ZAHLWEISEN } from '../lib/fees';
 import { earliestExitDate, formatDate, formatEUR, isValidIBAN, normalizeIBAN, todayISO, ageAt } from '../lib/format';
 import { feeGroups, memberName } from '../lib/lookups';
+import { missingFields, requiredFields } from '../lib/completeness';
+import { nextMemberNo } from '../lib/setup';
 import { centToCsv, toCsv } from '../lib/print';
 import { downloadBlob } from '../db/storage';
 import {
   attempt, Badge, DateInput, Field, GradeBadge, Modal, MoneyInput, PageHeader, Select, TextArea, TextInput, YearSelect,
 } from '../components/ui';
 
-type Filter = 'aktiv' | 'gekuendigt' | 'ausgetreten' | 'alle';
+type Filter = 'aktiv' | 'unvollstaendig' | 'gekuendigt' | 'ausgetreten' | 'alle';
 
 export function MembersPage() {
   const [search, setSearch] = useState('');
@@ -26,15 +28,18 @@ export function MembersPage() {
   const rows = useQuery(() => {
     const ctx = loadFeeContext();
     const groups = new Map(feeGroups().map((g) => [g.id, g.name]));
+    const req = requiredFields();
     return all<Member>('SELECT * FROM members ORDER BY nachname, vorname').map((m) => {
       const s = yearSummary(m, year, ctx);
-      return { m, s, vortrag: balanceBefore(m, year, ctx), gruppe: m.fee_group_id ? groups.get(m.fee_group_id) ?? '' : '' };
+      return { m, s, vortrag: balanceBefore(m, year, ctx), gruppe: m.fee_group_id ? groups.get(m.fee_group_id) ?? '' : '', fehlt: missingFields(m, req) };
     });
   }, [year]);
+  const incomplete = rows.filter((r) => r.fehlt.length && (!r.m.austritt || r.m.austritt >= today)).length;
 
   const q = search.trim().toLowerCase();
-  const visible = rows.filter(({ m }) => {
+  const visible = rows.filter(({ m, fehlt }) => {
     if (filter === 'aktiv' && !isActive(m, today)) return false;
+    if (filter === 'unvollstaendig' && !(fehlt.length && (!m.austritt || m.austritt >= today))) return false;
     if (filter === 'gekuendigt' && !(m.austritt && m.austritt >= today)) return false;
     if (filter === 'ausgetreten' && !(m.austritt && m.austritt < today)) return false;
     if (grad && m.grad !== grad) return false;
@@ -70,10 +75,22 @@ export function MembersPage() {
           <button className="primary" onClick={() => setEditing({})}>+ Neues Mitglied</button>
         </>}
       />
+      {incomplete > 0 && filter !== 'unvollstaendig' && (
+        <div className="callout warn">
+          ⚠︎ Bei {incomplete} Mitglied{incomplete === 1 ? '' : 'ern'} fehlen noch Angaben. <a href="#/mitglieder" onClick={(e) => { e.preventDefault(); setFilter('unvollstaendig'); }}>Jetzt ergänzen</a>
+        </div>
+      )}
+      {filter === 'unvollstaendig' && (
+        <div className="callout">
+          Klicke ein Mitglied an, um die fehlenden Angaben zu ergänzen – mit „Speichern &amp; nächstes" geht es direkt weiter.
+          Welche Angaben Pflicht sind, stellst du unter <a href="#/daten">Daten &amp; Sicherung</a> ein.
+        </div>
+      )}
       <div className="toolbar">
         <input className="search" placeholder="Suchen: Name, Nr., Ort, E-Mail …" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
           <option value="aktiv">Aktive Mitglieder</option>
+          <option value="unvollstaendig">Unvollständig ({incomplete})</option>
           <option value="gekuendigt">Gekündigt (Austritt in Zukunft)</option>
           <option value="ausgetreten">Ausgetreten</option>
           <option value="alle">Alle</option>
@@ -91,16 +108,21 @@ export function MembersPage() {
             </tr>
           </thead>
           <tbody>
-            {visible.map(({ m, s, vortrag, gruppe }) => {
+            {visible.map(({ m, s, vortrag, gruppe, fehlt }) => {
               const offen = s.offen + vortrag;
               return (
-                <tr key={m.id} onClick={() => navigate(`mitglieder/${m.id}`)}>
+                <tr key={m.id} onClick={() => (filter === 'unvollstaendig' ? setEditing(m) : navigate(`mitglieder/${m.id}`))}>
                   <td className="muted">{m.mitgliedsnr}</td>
                   <td>
                     <strong className="nowrap">{memberName(m)}</strong>
                     <div className="muted small nowrap">
                       {[m.geburtsdatum ? `${ageAt(m.geburtsdatum)} J.` : null, m.ort].filter(Boolean).join(' · ')}
                     </div>
+                    {fehlt.length > 0 && (
+                      <div className="missing" title={`Fehlt: ${fehlt.join(', ')}`}>
+                        {filter === 'unvollstaendig' ? fehlt.map((f) => <Badge key={f} tone="warn">{f}</Badge>) : <Badge tone="warn">{fehlt.length} Angabe{fehlt.length === 1 ? '' : 'n'} fehlen</Badge>}
+                      </div>
+                    )}
                   </td>
                   <td><GradeBadge grad={m.grad} /></td>
                   <td className="small">
@@ -136,17 +158,25 @@ export function MembersPage() {
         </table>
       </div>
       <p className="muted small">* Offen inklusive Rückstand/Guthaben aus Vorjahren. Gutschriften und Überzahlungen erscheinen negativ.</p>
-      {editing && <MemberForm initial={editing} onClose={() => setEditing(null)} onSaved={(id) => navigate(`mitglieder/${id}`)} />}
+      {editing && (
+        <MemberForm
+          key={editing.id ?? 'neu'}
+          initial={editing}
+          onClose={() => setEditing(null)}
+          onSaved={filter === 'unvollstaendig' ? undefined : (id) => navigate(`mitglieder/${id}`)}
+          onNext={filter === 'unvollstaendig' && editing.id ? () => {
+            const ids = visible.map((r) => r.m);
+            const i = ids.findIndex((x) => x.id === editing.id);
+            const next = ids[i + 1] ?? ids.find((x) => x.id !== editing.id);
+            setEditing(next ?? null);
+          } : undefined}
+        />
+      )}
     </div>
   );
 }
 
-function nextMemberNo(): string {
-  const max = scalar<number>("SELECT MAX(CAST(mitgliedsnr AS INTEGER)) FROM members WHERE mitgliedsnr GLOB '[0-9]*'") ?? 0;
-  return String(max + 1 || 1001);
-}
-
-export function MemberForm(props: { initial: Partial<Member>; onClose: () => void; onSaved?: (id: number) => void }) {
+export function MemberForm(props: { initial: Partial<Member>; onClose: () => void; onSaved?: (id: number) => void; onNext?: () => void }) {
   const isNew = !props.initial.id;
   const [m, setM] = useState<Partial<Member>>(() => ({
     land: 'Deutschland',
@@ -162,16 +192,16 @@ export function MemberForm(props: { initial: Partial<Member>; onClose: () => voi
   const set = <K extends keyof Member>(k: K) => (v: Member[K] | null) => setM((p) => ({ ...p, [k]: v }));
   const ibanInvalid = !!m.iban && !isValidIBAN(m.iban);
   const errors: string[] = [];
-  if (!m.vorname?.trim()) errors.push('Vorname fehlt');
   if (!m.nachname?.trim()) errors.push('Nachname fehlt');
   if (!m.eintritt) errors.push('Eintrittsdatum fehlt');
   if (m.austritt && m.eintritt && m.austritt < m.eintritt) errors.push('Austritt liegt vor dem Eintritt');
 
-  const save = () => {
+  const fehlt = missingFields({ ...m, vorname: m.vorname ?? '' } as Member);
+  const save = (next = false) => {
     if (errors.length) return;
     let id = props.initial.id ?? 0;
     const values = [
-      m.mitgliedsnr || null, m.anrede || null, m.titel || null, m.vorname!.trim(), m.nachname!.trim(), m.geburtsdatum || null,
+      m.mitgliedsnr || null, m.anrede || null, m.titel || null, (m.vorname ?? '').trim(), m.nachname!.trim(), m.geburtsdatum || null,
       m.strasse || null, m.adresszusatz || null, m.plz || null, m.ort || null, m.land || null,
       m.email?.trim() || null, m.telefon || null, m.mobil || null, m.grad ?? 'unranked', m.fee_group_id ?? null,
       individuell ? m.beitrag_individuell_cent ?? 0 : null, m.zahlweise ?? 'jaehrlich', m.eintritt!, m.austritt || null,
@@ -209,7 +239,8 @@ export function MemberForm(props: { initial: Partial<Member>; onClose: () => voi
     );
     if (ok) {
       props.onClose();
-      props.onSaved?.(id);
+      if (next) props.onNext?.();
+      else props.onSaved?.(id);
     }
   };
 
@@ -217,14 +248,22 @@ export function MemberForm(props: { initial: Partial<Member>; onClose: () => voi
   return (
     <Modal
       size="wide"
-      title={isNew ? 'Neues Mitglied' : `${m.vorname} ${m.nachname} bearbeiten`}
+      title={isNew ? 'Neues Mitglied' : `${[m.vorname, m.nachname].filter(Boolean).join(' ')} bearbeiten`}
       onClose={props.onClose}
       footer={<>
         {errors.length > 0 && <span className="field-error">{errors.join(' · ')}</span>}
         <button onClick={props.onClose}>Abbrechen</button>
-        <button className="primary" disabled={errors.length > 0} onClick={save}>Speichern</button>
+        {props.onNext ? (
+          <>
+            <button disabled={errors.length > 0} onClick={() => save()}>Speichern</button>
+            <button className="primary" disabled={errors.length > 0} onClick={() => save(true)}>Speichern &amp; nächstes</button>
+          </>
+        ) : <button className="primary" disabled={errors.length > 0} onClick={() => save()}>Speichern</button>}
       </>}
     >
+      {fehlt.length > 0 && (
+        <div className="callout warn">Noch fehlende Angaben: {fehlt.join(', ')}. {isNew && 'Du kannst das Mitglied trotzdem schon anlegen und später ergänzen.'}</div>
+      )}
       <div className="form-grid">
         <h3 className="span-4">Person</h3>
         <Field label="Mitgliedsnummer"><TextInput value={m.mitgliedsnr} onChange={set('mitgliedsnr')} /></Field>
@@ -235,7 +274,7 @@ export function MemberForm(props: { initial: Partial<Member>; onClose: () => voi
         <Field label="Geburtsdatum" hint={m.geburtsdatum ? `${ageAt(m.geburtsdatum)} Jahre` : undefined}>
           <DateInput value={m.geburtsdatum} onChange={set('geburtsdatum')} />
         </Field>
-        <Field label="Vorname *" span={2}><TextInput value={m.vorname} onChange={set('vorname')} autoFocus={isNew} /></Field>
+        <Field label="Vorname" span={2}><TextInput value={m.vorname} onChange={set('vorname')} autoFocus={isNew} /></Field>
         <Field label="Nachname *" span={2}><TextInput value={m.nachname} onChange={set('nachname')} /></Field>
         {minor && (
           <Field label="Erziehungsberechtigte" span={4} hint="Bei Minderjährigen: Name(n) der Erziehungsberechtigten">
