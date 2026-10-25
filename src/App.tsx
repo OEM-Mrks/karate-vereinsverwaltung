@@ -139,7 +139,7 @@ function Shell({ onWiped }: { onWiped: () => void }) {
             💾 Sichern{changes ? <span className="pill">{changes}</span> : null}
           </button>
           <div className="offline">🔒 Offline · keine Cloud</div>
-          <div className="app-meta">Version {__APP_VERSION__} · © OE-Media.de</div>
+          <div className="app-meta">Version {__APP_VERSION__} · © oemedia.de</div>
         </div>
       </aside>
       <div className="main">

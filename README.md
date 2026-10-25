@@ -100,4 +100,4 @@ Aufbau und Datenmodell: [docs/KONZEPT.md](docs/KONZEPT.md).
 
 Die Kategorien orientieren sich am DATEV-Kontenrahmen SKR04, sind aber für Vereine vereinfacht und frei anpassbar. Die App ersetzt keine steuerliche Beratung.
 
-© OE-Media.de – alle Rechte vorbehalten. Nutzung nur mit ausdrücklicher Genehmigung, siehe [LICENSE](LICENSE).
+© oemedia.de – alle Rechte vorbehalten. Nutzung nur mit ausdrücklicher Genehmigung, siehe [LICENSE](LICENSE).

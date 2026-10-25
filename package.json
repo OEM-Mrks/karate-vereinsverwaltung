@@ -1,7 +1,7 @@
 {
   "name": "vereinsverwaltung",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "module",
   "description": "Lokale Vereinsverwaltung für Karatevereine: Mitglieder, Beiträge, Kontoimport, Belege und GuV – komplett im Browser, ohne Cloud.",
   "scripts": {
