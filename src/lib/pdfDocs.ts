@@ -1,6 +1,6 @@
-// Dokumente als PDF: GuV, Bericht der Kassenprüfung, Kündigungsbestätigung, offene Beiträge.
+// Dokumente als PDF: GuV, Bericht der Kassenprüfung, Kündigungsbestätigung, offene Beiträge, Anwesenheitsliste.
 
-import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
+import type { Content, TableCell, TDocumentDefinitions } from 'pdfmake/interfaces';
 import type { Audit, Member } from '../db/schema';
 import { SPHAEREN } from '../db/schema';
 import { gradeIndex, gradeName } from '../db/seed';
@@ -12,6 +12,7 @@ import { baseDoc, eur, FARBE, signatures, table } from './pdf';
 import type { Report, ReportLine } from './report';
 import { shiftYear } from './report';
 import { getVereinsdaten, namesFor, signatory } from './verein';
+import type { Teilnehmer, VersammlungOptionen } from './versammlung';
 
 function zeitraumText(r: Report): string {
   return r.ganzesJahr ? `Geschäftsjahr ${r.jahr}` : `${formatDate(r.von)} – ${formatDate(r.bis)}`;
@@ -212,4 +213,81 @@ export function offeneBeitraegePdf(jahr: number, rows: { m: Member; s: YearSumma
       { total: ['', 'Summe', '', eur(summe.soll), eur(summe.bez), eur(summe.vj), eur(summe.off)] },
     ], { widths: [30, '*', '*', 56, 56, 52, 58], numeric: [3, 4, 5, 6], fontSize: 8.5 }),
   ]);
+}
+
+// ---------- Anwesenheitsliste Mitgliederversammlung ----------
+
+export function anwesenheitslistePdf(o: VersammlungOptionen, liste: Teilnehmer[]): TDocumentDefinitions {
+  const th = (text: string): TableCell => ({ text, style: 'th', fillColor: FARBE.fill });
+  const cols: { head: string; width: number | string; cell: (m: Teilnehmer | null) => TableCell }[] = [
+    { head: 'Nr.', width: 22, cell: () => ({ text: '' }) },
+    {
+      head: 'Name', width: 140,
+      cell: (m) => m
+        ? { stack: [
+          { text: `${m.nachname}, ${[m.titel, m.vorname].filter(Boolean).join(' ')}`, bold: true },
+          { text: [m.mitgliedsnr ? `Mitgl.-Nr. ${m.mitgliedsnr}` : '', o.minderjaehrige && m.minderjaehrig ? 'minderjährig' : ''].filter(Boolean).join(' · '), fontSize: 7, color: FARBE.muted },
+        ] }
+        : { text: '' },
+    },
+    ...(o.anschrift ? [{
+      head: 'Anschrift', width: 150,
+      cell: (m: Teilnehmer | null): TableCell => ({ text: m ? [m.strasse, `${m.plz ?? ''} ${m.ort ?? ''}`.trim()].filter(Boolean).join('\n') : '', fontSize: 8 }),
+    }] : []),
+    ...(o.telefon ? [{
+      head: 'Telefon', width: 82,
+      cell: (m: Teilnehmer | null): TableCell => ({ text: m ? [m.mobil, m.telefon].filter(Boolean).join('\n') : '', fontSize: 8 }),
+    }] : []),
+    ...(o.email ? [{
+      head: 'E-Mail', width: 125,
+      cell: (m: Teilnehmer | null): TableCell => ({ text: m?.email ?? '', fontSize: 7.5 }),
+    }] : []),
+    { head: 'Unterschrift', width: '*', cell: () => ({ text: '' }) },
+  ];
+  const zeilen = [...liste, ...Array<null>(Math.max(0, o.leerzeilen)).fill(null)];
+  const body: TableCell[][] = [
+    cols.map((c) => th(c.head)),
+    ...zeilen.map((m, i) => cols.map((c, j) => (j === 0 ? { text: String(i + 1), color: FARBE.muted, fontSize: 8 } : c.cell(m)))),
+  ];
+  const wann = [formatDate(o.datum), o.uhrzeit && `${o.uhrzeit} Uhr`, o.ort].filter(Boolean).join(' · ');
+  const minderjaehrig = liste.filter((m) => m.minderjaehrig).length;
+  const content: Content[] = [
+    { text: o.titel || 'Mitgliederversammlung', style: 'h1' },
+    { text: `Anwesenheitsliste · ${wann}`, style: 'sub', margin: [0, 0, 0, 2] },
+    {
+      text: `${liste.length} aktive Mitglieder am ${formatDate(o.datum)}`
+        + (o.minderjaehrige && minderjaehrig ? `, davon ${minderjaehrig} minderjährig (Stimmrecht laut Satzung)` : '')
+        + '. Mit der Unterschrift wird die Anwesenheit bestätigt.',
+      fontSize: 8, color: FARBE.muted, margin: [0, 0, 0, 8],
+    },
+    {
+      table: { headerRows: 1, widths: cols.map((c) => c.width), body, dontBreakRows: true, heights: (i: number) => (i === 0 ? 'auto' : 30) },
+      layout: {
+        hLineWidth: (i: number) => (i === 0 || i === body.length ? 0.8 : i === 1 ? 0.8 : 0.3),
+        vLineWidth: (i: number) => (i === cols.length - 1 ? 0.3 : 0),
+        hLineColor: (i: number) => (i <= 1 || i === body.length ? FARBE.text : FARBE.line),
+        vLineColor: () => FARBE.line,
+        paddingTop: () => 4,
+        paddingBottom: () => 4,
+        paddingLeft: () => 4,
+        paddingRight: () => 4,
+      },
+    },
+    {
+      unbreakable: true,
+      stack: [
+        {
+          columns: [
+            { text: 'Anwesende Mitglieder: ________', width: 'auto' },
+            { text: 'davon stimmberechtigt: ________', width: 'auto' },
+            { text: 'Gäste: ________', width: 'auto' },
+          ],
+          columnGap: 36,
+          margin: [0, 16, 0, 0],
+        },
+        signatures(['Versammlungsleitung', 'Protokollführung']),
+      ],
+    },
+  ];
+  return baseDoc(`${o.titel || 'Mitgliederversammlung'} · ${formatDate(o.datum)}`, content, { landscape: true });
 }

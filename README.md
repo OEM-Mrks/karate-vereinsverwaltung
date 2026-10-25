@@ -12,6 +12,7 @@ Keine Cloud, kein Server, kein Konto. Alle Daten liegen in einer SQLite-Datei, d
 - Anlegen schon mit dem Namen allein; die Liste **„Unvollständig“** zeigt, wo noch Angaben fehlen (Pflichtangaben einstellbar), Ergänzen mit „Speichern & nächstes“
 - **Frühestes Kündigungsdatum**: heute + 3 Monate zum Monatsende (Frist einstellbar), z. B. Kündigung am 25.10.2026 → Austritt 31.01.2027
 - Kündigungsbestätigung als druckfertiger Brief
+- **Mitgliederversammlung**: Anwesenheitsliste aller am Versammlungstag aktiven Mitglieder als PDF (Name, Anschrift, Telefon, optional E-Mail, Minderjährige gekennzeichnet) mit Unterschriftsspalte, Leerzeilen für Gäste und Feldern für Anwesende/Stimmberechtigte
 
 **Verein & Vorstand**
 - Vereinslogo (erscheint in der Seitenleiste und auf allen PDF-Dokumenten)
@@ -63,7 +64,7 @@ Keine Cloud, kein Server, kein Konto. Alle Daten liegen in einer SQLite-Datei, d
 - Export als CSV
 
 **PDF-Dokumente**
-- GuV, Bericht der Kassenprüfung, Kündigungsbestätigung und Liste offener Beiträge werden als echte PDF-Dateien direkt im Browser erzeugt (pdfmake, Schrift eingebettet) – mit Vereinslogo, Briefkopf, Fußzeile mit Vereinsdaten und Seitenzahlen; kein Druckdialog nötig
+- GuV, Bericht der Kassenprüfung, Kündigungsbestätigung, Liste offener Beiträge, Eigenbelege und Anwesenheitsliste werden als echte PDF-Dateien direkt im Browser erzeugt (pdfmake, Schrift eingebettet) – mit Vereinslogo, Briefkopf, Fußzeile mit Vereinsdaten und Seitenzahlen; kein Druckdialog nötig
 
 ## Datenschutz (DSGVO)
 

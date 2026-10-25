@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard';
 import { MembersPage } from './pages/Members';
 import { MemberDetail } from './pages/MemberDetail';
 import { FeesPage } from './pages/Fees';
+import { MeetingPage } from './pages/Meeting';
 import { BankPage } from './pages/Bank';
 import { ImportPage } from './pages/Import';
 import { DocumentsPage } from './pages/Documents';
@@ -27,6 +28,7 @@ const NAV: { group: string | null; items: NavItem[] }[] = [
   { group: 'Verein', items: [
     { id: 'mitglieder', label: 'Mitglieder', icon: '👤' },
     { id: 'beitraege', label: 'Beiträge', icon: '€' },
+    { id: 'versammlung', label: 'Mitgliederversammlung', icon: '🗳' },
   ] },
   { group: 'Finanzen', items: [
     { id: 'konto', label: 'Buchungen & Konten', icon: '🏦' },
@@ -106,6 +108,7 @@ function Shell({ onWiped }: { onWiped: () => void }) {
   switch (page) {
     case 'mitglieder': content = id ? <MemberDetail id={id} /> : <MembersPage />; break;
     case 'beitraege': content = <FeesPage />; break;
+    case 'versammlung': content = <MeetingPage />; break;
     case 'konto': content = <BankPage txId={id} />; break;
     case 'import': content = <ImportPage />; break;
     case 'wiederkehrend': content = <RecurringPage />; break;
