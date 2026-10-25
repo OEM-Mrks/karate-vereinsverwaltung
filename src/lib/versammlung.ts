@@ -18,9 +18,11 @@ export type VersammlungOptionen = {
   sortierung: 'name' | 'nr';
   berichtsjahr?: number;     // Geschäftsjahr für Kassenbericht und Kassenprüfung (Standard: Vorjahr der Versammlung)
   eckdaten?: boolean;        // Eckdaten aus der Buchhaltung in die Protokollvorlage übernehmen (Standard: ja)
+  pruefungsjahre?: number[]; // Kassenprüfungen, über die berichtet wird (Standard: Berichtsjahr)
 };
 
 export const berichtsjahrVon = (o: Pick<VersammlungOptionen, 'datum' | 'berichtsjahr'>) => o.berichtsjahr ?? Number(o.datum.slice(0, 4)) - 1;
+export const pruefungsjahreVon = (o: Pick<VersammlungOptionen, 'datum' | 'berichtsjahr' | 'pruefungsjahre'>) => o.pruefungsjahre ?? [berichtsjahrVon(o)];
 
 export type Teilnehmer = Member & { minderjaehrig: boolean };
 

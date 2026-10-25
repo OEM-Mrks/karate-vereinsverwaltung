@@ -3,10 +3,11 @@ import initSqlJs from 'sql.js';
 import { beforeEach, expect, it } from 'vitest';
 import { run, scalar, setSqlJs } from '../src/db/db';
 import { loadDemo } from '../src/db/demo';
-import { beitragsStatistik, jahresbericht, mitgliederStatistik, prognose } from '../src/lib/kennzahlen';
+import { beitragsStatistik, jahresbericht, mitgliederStatistik, prognose, pruefungsStand } from '../src/lib/kennzahlen';
+import { startAudit } from '../src/lib/audit';
 import { pdfBlob } from '../src/lib/pdf';
 import { protokollPdf, vorstandsberichtPdf } from '../src/lib/pdfDocs';
-import { ladeTagesordnung } from '../src/lib/versammlung';
+import { ladeTagesordnung, pruefungsjahreVon } from '../src/lib/versammlung';
 
 beforeEach(async () => {
   const SQL = await initSqlJs({ locateFile: (f) => fileURLToPath(new URL(`../node_modules/sql.js/dist/${f}`, import.meta.url)) });
@@ -53,4 +54,18 @@ it('erzeugt Protokollvorlage mit Eckdaten und Vorstandsbericht', async () => {
   };
   expect((await pdfBlob(protokollPdf(o, ladeTagesordnung(o.datum), jahresbericht(year - 1)))).size).toBeGreaterThan(1000);
   expect((await pdfBlob(vorstandsberichtPdf(`${year}-10-25`, { mitNamen: true }))).size).toBeGreaterThan(1000);
+});
+
+it('Protokollvorlage berichtet über die gewählten Prüfungsjahre', async () => {
+  expect(pruefungsjahreVon({ datum: `${year}-03-01` })).toEqual([year - 1]);
+  expect(pruefungsjahreVon({ datum: `${year}-03-01`, pruefungsjahre: [year - 2, year - 1] })).toEqual([year - 2, year - 1]);
+  startAudit(year - 1, { pruefer: 'A\nB', pruefdatum: `${year}-02-01`, ort: '', umfang: 'alle' });
+  const p = [pruefungsStand(year - 1), pruefungsStand(year - 2)];
+  expect(p.map((x) => x.vorhanden)).toEqual([true, false]);
+  expect(p[0].pruefer).toEqual(['A', 'B']);
+  const o = {
+    titel: 'MV', datum: `${year}-03-01`, uhrzeit: '', ort: '', anschrift: true, telefon: true, email: false,
+    minderjaehrige: true, leerzeilen: 0, sortierung: 'name' as const,
+  };
+  expect((await pdfBlob(protokollPdf(o, ladeTagesordnung(o.datum), jahresbericht(year - 1), p))).size).toBeGreaterThan(1000);
 });

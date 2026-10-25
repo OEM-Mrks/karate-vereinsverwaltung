@@ -12,10 +12,10 @@ import { baseDoc, eur, FARBE, signatures, table } from './pdf';
 import type { Report, ReportLine } from './report';
 import { buildReport, shiftYear } from './report';
 import { getVereinsdaten, namesFor, signatory } from './verein';
-import type { Jahresbericht } from './kennzahlen';
+import type { Jahresbericht, PruefungsStand } from './kennzahlen';
 import { beitragsStatistik, datenstand, mitgliederStatistik, prognose, pruefungsStand } from './kennzahlen';
 import { MONATE } from './recurring';
-import type { Tagesordnung, Teilnehmer, VersammlungOptionen } from './versammlung';
+import type { Tagesordnung, Teilnehmer, TopPunkt, VersammlungOptionen } from './versammlung';
 import { tops } from './versammlung';
 
 function zeitraumText(r: Report): string {
@@ -394,8 +394,7 @@ export function kassenberichtDaten(d: Jahresbericht): Content {
 }
 
 /** Eckpunkte für den Bericht der Kassenprüfer. */
-export function pruefberichtDaten(d: Jahresbericht): Content {
-  const p = d.pruefung;
+export function pruefberichtDaten(p: PruefungsStand): Content {
   if (!p.vorhanden) return eckdaten(`Kassenprüfung ${p.jahr}`, [['Stand', 'Für dieses Geschäftsjahr ist noch keine Kassenprüfung erfasst.']]);
   return eckdaten(`Kassenprüfung ${p.jahr}`, [
     ['Prüfung am', p.pruefdatum ? formatDate(p.pruefdatum) : '–'],
@@ -408,8 +407,14 @@ export function pruefberichtDaten(d: Jahresbericht): Content {
   ]);
 }
 
-export function protokollPdf(o: VersammlungOptionen, t: Tagesordnung, daten?: Jahresbericht): TDocumentDefinitions {
+/**
+ * Protokollvorlage. Mit `daten` stehen beim Bericht des Kassenwarts die Eckdaten des Berichtsjahres;
+ * `pruefungen` sind die Kassenprüfungen, über die berichtet wird (ein Kasten je Jahr, ältestes zuerst).
+ */
+export function protokollPdf(o: VersammlungOptionen, t: Tagesordnung, daten?: Jahresbericht, pruefungen?: PruefungsStand[]): TDocumentDefinitions {
   const titel = o.titel || 'Mitgliederversammlung';
+  const pruef = [...(pruefungen ?? (daten ? [daten.pruefung] : []))].sort((a, b) => a.jahr - b.jahr);
+  const mitDaten = (p: TopPunkt) => (!!daten && p.standard === 'bericht_kasse') || (!!pruef.length && p.standard === 'bericht_pruefer');
   const linien = (n: number): Content => ({
     canvas: Array.from({ length: n }, (_, i) => ({ type: 'line' as const, x1: 0, y1: 18 + i * 20, x2: 483, y2: 18 + i * 20, lineWidth: 0.3, lineColor: FARBE.line })),
     margin: [0, 0, 0, 4],
@@ -431,13 +436,14 @@ export function protokollPdf(o: VersammlungOptionen, t: Tagesordnung, daten?: Ja
     },
     { text: 'Die Anwesenheitsliste ist dem Protokoll als Anlage beigefügt.', fontSize: 8, color: FARBE.muted, margin: [0, 0, 0, 6] },
     ...tops(t).map((p): Content => ({
-      unbreakable: true,
+      // Mehrere Prüfungsberichte dürfen über die Seite laufen, alles andere bleibt zusammen
+      unbreakable: !(p.standard === 'bericht_pruefer' && pruef.length > 1),
       stack: [
         { text: `TOP ${p.nr}: ${p.titel}`, bold: true, fontSize: 10.5, margin: [0, 10, 0, 1] },
         ...(p.details.trim() ? [{ text: p.details.trim(), fontSize: 8, color: FARBE.muted } as Content] : []),
         ...(daten && p.standard === 'bericht_kasse' ? [kassenberichtDaten(daten)] : []),
-        ...(daten && p.standard === 'bericht_pruefer' ? [pruefberichtDaten(daten)] : []),
-        linien(daten && (p.standard === 'bericht_kasse' || p.standard === 'bericht_pruefer') ? 2 : p.abstimmung ? 3 : 4),
+        ...(p.standard === 'bericht_pruefer' ? pruef.map(pruefberichtDaten) : []),
+        linien(mitDaten(p) ? 2 : p.abstimmung ? 3 : 4),
         ...(p.abstimmung ? [{
           text: [
             { text: 'Abstimmung:  ', color: FARBE.muted },

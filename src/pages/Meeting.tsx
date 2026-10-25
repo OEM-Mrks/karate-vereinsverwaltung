@@ -4,9 +4,11 @@ import { useLocalState, useQuery } from '../hooks';
 import { formatDate, todayISO } from '../lib/format';
 import { anwesenheitslistePdf, einladungPdf, protokollPdf } from '../lib/pdfDocs';
 import { getVereinsdaten } from '../lib/verein';
-import { jahresbericht } from '../lib/kennzahlen';
+import { all } from '../db/db';
+import type { Audit } from '../db/schema';
+import { jahresbericht, pruefungsStand } from '../lib/kennzahlen';
 import {
-  berichtsjahrVon, ladeTagesordnung, punktHinzufuegen, speichereTagesordnung, teilnehmer, tops, verschieben, verwerfeTagesordnung,
+  berichtsjahrVon, ladeTagesordnung, pruefungsjahreVon, punktHinzufuegen, speichereTagesordnung, teilnehmer, tops, verschieben, verwerfeTagesordnung,
   type Tagesordnung, type TopPunkt, type VersammlungOptionen,
 } from '../lib/versammlung';
 import { PdfPreview } from '../components/PdfPreview';
@@ -87,6 +89,9 @@ function TagesordnungEditor({ o, set, onPdf }: {
     setNeu('');
   };
   const nummern = new Map(tops(t).map((p) => [p.id, p.nr]));
+  // Wählbar: alle Jahre mit Kassenprüfung, Berichtsjahr und Vorjahr (falls über zwei Jahre berichtet wird), bereits gewählte Jahre
+  const pruefungen = useQuery(() => all<Audit>('SELECT * FROM audits'));
+  const jahre = [...new Set([...pruefungen.map((p) => p.jahr), berichtsjahrVon(o), berichtsjahrVon(o) - 1, ...pruefungsjahreVon(o)])].sort((a, b) => b - a);
   const anzahl = nummern.size;
 
   return (
@@ -102,7 +107,11 @@ function TagesordnungEditor({ o, set, onPdf }: {
             <button disabled={!anzahl} onClick={() => onPdf({
               title: 'Protokollvorlage',
               filename: `Protokoll_Mitgliederversammlung_${o.datum}.pdf`,
-              build: () => protokollPdf(o, t, o.eckdaten === false ? undefined : jahresbericht(berichtsjahrVon(o))),
+              build: () => protokollPdf(
+                o, t,
+                o.eckdaten === false ? undefined : jahresbericht(berichtsjahrVon(o)),
+                o.eckdaten === false ? [] : pruefungsjahreVon(o).map(pruefungsStand),
+              ),
             })}>Protokollvorlage (PDF)</button>
           </div>
         </div>
@@ -112,6 +121,23 @@ function TagesordnungEditor({ o, set, onPdf }: {
             onChange={(v) => set('eckdaten')(v)}
             label={<>Eckdaten {berichtsjahrVon(o)} in die Protokollvorlage übernehmen <span className="muted small">(Kontostände, Einnahmen/Ausgaben, Mitgliederzahlen, Beitragsstand, Kassenprüfung – ohne Namen)</span></>}
           />
+          {o.eckdaten !== false && (
+            <div className="pruefjahre">
+              <span className="muted small">Bericht der Kassenprüfer über:</span>
+              {jahre.map((j) => {
+                const p = pruefungen.find((x) => x.jahr === j);
+                const gewaehlt = pruefungsjahreVon(o).includes(j);
+                return (
+                  <Checkbox
+                    key={j}
+                    checked={gewaehlt}
+                    onChange={(v) => set('pruefungsjahre')(v ? [...pruefungsjahreVon(o), j] : pruefungsjahreVon(o).filter((x) => x !== j))}
+                    label={<>{j} <span className="muted small">{p?.pruefdatum ? `geprüft am ${formatDate(p.pruefdatum)}` : p ? 'Prüfung angelegt' : 'keine Prüfung erfasst'}</span></>}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
         <ul className="agenda">
           {t.punkte.map((p, i) => {
