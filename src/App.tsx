@@ -1,7 +1,7 @@
 import { useRef, useState, useSyncExternalStore } from 'react';
 import { getSetting, hasDatabase } from './db/db';
 import { downloadBackup, getSaveState, openFile, startDemo, startNew, subscribeSave } from './db/session';
-import { useDbVersion, useRoute } from './hooks';
+import { useDbVersion, useLocalState, useRoute } from './hooks';
 import { Toaster, toast } from './components/ui';
 import { Dashboard } from './pages/Dashboard';
 import { MembersPage } from './pages/Members';
@@ -16,21 +16,70 @@ import { DataPage } from './pages/DataPage';
 import { AuditPage } from './pages/Audit';
 import { StatementsPage } from './pages/Statements';
 
-const NAV: { id: string; label: string; icon: string; group?: string }[] = [
-  { id: 'uebersicht', label: 'Übersicht', icon: '◉' },
-  { id: 'mitglieder', label: 'Mitglieder', icon: '👤', group: 'Verein' },
-  { id: 'beitraege', label: 'Beiträge', icon: '€' },
-  { id: 'konto', label: 'Konto', icon: '🏦', group: 'Finanzen' },
-  { id: 'import', label: 'CSV-Import', icon: '⇪' },
-  { id: 'auszuege', label: 'Kontoauszüge', icon: '🗂' },
-  { id: 'belege', label: 'Belege', icon: '📄' },
-  { id: 'guv', label: 'GuV', icon: '📊' },
-  { id: 'kassenpruefung', label: 'Kassenprüfung', icon: '✓' },
-  { id: 'partner', label: 'Lieferanten', icon: '🏷', group: 'Stammdaten' },
-  { id: 'kategorien', label: 'Kategorien', icon: '▤' },
-  { id: 'regeln', label: 'Regeln', icon: '⚡' },
-  { id: 'daten', label: 'Daten & Sicherung', icon: '💾', group: 'System' },
+type NavItem = { id: string; label: string; icon: string };
+
+// Menü in Bereiche gegliedert: Was wird wo gemacht?
+const NAV: { group: string | null; items: NavItem[] }[] = [
+  { group: null, items: [{ id: 'uebersicht', label: 'Übersicht', icon: '◉' }] },
+  { group: 'Verein', items: [
+    { id: 'mitglieder', label: 'Mitglieder', icon: '👤' },
+    { id: 'beitraege', label: 'Beiträge', icon: '€' },
+  ] },
+  { group: 'Finanzen', items: [
+    { id: 'konto', label: 'Buchungen & Konten', icon: '🏦' },
+    { id: 'import', label: 'Umsätze importieren (CSV)', icon: '⇪' },
+  ] },
+  { group: 'Dateiablage', items: [
+    { id: 'auszuege', label: 'Kontoauszüge', icon: '🗂' },
+    { id: 'belege', label: 'Belege & Rechnungen', icon: '📄' },
+  ] },
+  { group: 'Jahresabschluss', items: [
+    { id: 'guv', label: 'Gewinn & Verlust (GuV)', icon: '📊' },
+    { id: 'kassenpruefung', label: 'Kassenprüfung', icon: '✓' },
+  ] },
+  { group: 'Stammdaten', items: [
+    { id: 'partner', label: 'Lieferanten & Partner', icon: '🏷' },
+    { id: 'kategorien', label: 'Kategorien (SKR04)', icon: '▤' },
+    { id: 'regeln', label: 'Zuordnungsregeln', icon: '⚡' },
+  ] },
+  { group: 'System', items: [{ id: 'daten', label: 'Daten & Sicherung', icon: '💾' }] },
 ];
+
+/** Rechtsformen nicht umbrechen („Karate-Dojo Haan e. V.“ statt „… e.“ / „V.“ in zwei Zeilen). */
+function brandName(name: string): string {
+  // Schreibweise beibehalten („e.V.“ bleibt „e.V.“), nur die Leerzeichen werden geschützt
+  return name.replace(/\s+(e\.\s?V\.|gGmbH|GmbH)/g, (_, rf: string) => '\u00a0' + rf.replace(/\s/g, '\u00a0'));
+}
+
+function NavGroups({ page }: { page: string | undefined }) {
+  const [closed, setClosed] = useLocalState<string[]>('nav.closed', []);
+  return (
+    <>
+      {NAV.map(({ group, items }) => {
+        const active = items.some((n) => n.id === page || (!page && n.id === 'uebersicht'));
+        const open = !group || active || !closed.includes(group);
+        return (
+          <div key={group ?? 'start'} className="nav-section">
+            {group && (
+              <button
+                className="nav-group"
+                aria-expanded={open}
+                onClick={(e) => { e.stopPropagation(); setClosed(open ? [...closed, group] : closed.filter((g) => g !== group)); }}
+              >
+                <span>{group}</span><span className="nav-chevron" aria-hidden>{open ? '▾' : '▸'}</span>
+              </button>
+            )}
+            {open && items.map((n) => (
+              <a key={n.id} href={`#/${n.id}`} className={n.id === page || (!page && n.id === 'uebersicht') ? 'active' : ''}>
+                <span className="nav-icon" aria-hidden>{n.icon}</span>{n.label}
+              </a>
+            ))}
+          </div>
+        );
+      })}
+    </>
+  );
+}
 
 export function App() {
   useDbVersion();
@@ -70,19 +119,12 @@ function Shell({ onWiped }: { onWiped: () => void }) {
         <div className="brand">
           <span className="brand-logo" aria-hidden>空</span>
           <div>
-            <div className="brand-name">{getSetting('verein_name')}</div>
+            <div className="brand-name" title={getSetting('verein_name')}>{brandName(getSetting('verein_name'))}</div>
             <div className="brand-sub">Vereinsverwaltung · lokal</div>
           </div>
         </div>
         <nav>
-          {NAV.map((n) => (
-            <div key={n.id}>
-              {n.group && <div className="nav-group">{n.group}</div>}
-              <a href={`#/${n.id}`} className={page === n.id || (!page && n.id === 'uebersicht') ? 'active' : ''}>
-                <span className="nav-icon" aria-hidden>{n.icon}</span>{n.label}
-              </a>
-            </div>
-          ))}
+          <NavGroups page={page} />
         </nav>
         <div className="sidebar-foot">
           <div className={`save-state ${save.error ? 'bad' : ''}`}>
@@ -97,7 +139,7 @@ function Shell({ onWiped }: { onWiped: () => void }) {
       <div className="main">
         <header className="topbar">
           <button className="icon-btn menu-btn" onClick={() => setMenuOpen(!menuOpen)} aria-label="Menü">☰</button>
-          <span className="topbar-title">{getSetting('verein_name')}</span>
+          <span className="topbar-title">{brandName(getSetting('verein_name'))}</span>
         </header>
         <main>{content}</main>
       </div>

@@ -24,9 +24,9 @@ export function BankPage({ txId }: { txId?: number }) {
   return (
     <div className="page">
       <PageHeader
-        title="Konto"
+        title="Buchungen & Konten"
         subtitle="Alle Einnahmen und Ausgaben laufen über das Vereinskonto – jede Buchung wird einer Kategorie zugeordnet."
-        actions={<button className="primary" onClick={() => navigate('import')}>Kontoauszug (CSV) importieren</button>}
+        actions={<button className="primary" onClick={() => navigate('import')}>Umsätze importieren (CSV)</button>}
       />
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[{ id: 'buchungen', label: 'Buchungen' }, { id: 'einrichtung', label: 'Offene nach Zahlungspartner' }, { id: 'konten', label: 'Konten & Kontostände' }, { id: 'importe', label: 'Importe' }]} />
       {tab === 'buchungen' && <TransactionList />}
@@ -149,7 +149,7 @@ function TransactionList() {
       )}
       {rows.length === 0 ? (
         <Empty>
-          Noch keine Buchungen für {year}. <a href="#/import">Kontoauszug als CSV importieren</a> – z. B. aus dem Online-Banking der Sparkasse unter „Umsätze → Export → CSV-CAMT".
+          Noch keine Buchungen für {year}. <a href="#/import">Umsätze als CSV importieren</a> – z. B. aus dem Online-Banking der Sparkasse unter „Umsätze → Export → CSV-CAMT".
         </Empty>
       ) : (
         <div className="table-wrap">

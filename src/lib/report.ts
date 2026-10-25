@@ -84,7 +84,7 @@ export function buildReport(year: number, von = `${year}-01-01`, bis = `${year}-
     const einnahmen = cats.filter((c) => c.sphaere === s.id && c.typ === 'einnahme').map(line).filter(used);
     const ausgaben = cats.filter((c) => c.sphaere === s.id && c.typ === 'ausgabe').map(line).filter(used);
     // Ausgaben sind auf dem Konto negativ – für die Darstellung positiv
-    ausgaben.forEach((l) => { l.summe = -l.summe; l.vorjahr = -l.vorjahr; });
+    ausgaben.forEach((l) => { l.summe = -l.summe || 0; l.vorjahr = -l.vorjahr || 0; });
     const summeEin = einnahmen.reduce((a, l) => a + l.summe, 0);
     const summeAus = ausgaben.reduce((a, l) => a + l.summe, 0);
     return {

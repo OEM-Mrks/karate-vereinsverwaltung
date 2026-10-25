@@ -63,8 +63,8 @@ export function ImportPage() {
 
   return (
     <div className="page">
-      <a className="back" href="#/konto">← Konto</a>
-      <PageHeader title="Kontoauszug importieren" subtitle="CSV-Datei aus dem Online-Banking – Sparkasse, Volksbank, DKB, ING, Commerzbank u. a. Spalten werden automatisch erkannt." />
+      <a className="back" href="#/konto">← Buchungen &amp; Konten</a>
+      <PageHeader title="Umsätze importieren (CSV)" subtitle="Umsatz-Export aus dem Online-Banking – Sparkasse, Volksbank, DKB, ING, Commerzbank u. a. Spalten werden automatisch erkannt." />
       {!st && (
         <>
           <div

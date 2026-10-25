@@ -116,9 +116,9 @@ export function ReportPage() {
           {abweichung.length
             ? `Der berechnete Kontostand weicht bei ${abweichung.map((k) => k.account.name).join(', ')} vom Kontoauszug ab – vermutlich fehlen Umsätze oder wurden doppelt importiert.`
             : fehlendAuszug.length
-              ? <>Kontostand laut Auszug noch nicht erfasst. {fehlendAuszug.map((k) => (
+              ? <>Kontostand laut Auszug noch nicht erfasst. <span className="inline">{fehlendAuszug.map((k) => (
                   <button key={k.account.id} className="link" onClick={() => setCheckpointFor(k.account)}>Für „{k.account.name}" erfassen</button>
-                ))}</>
+                ))}</span></>
               : '✓ Berechneter Kontostand stimmt mit dem Kontoauszug überein.'}
         </div>
       )}

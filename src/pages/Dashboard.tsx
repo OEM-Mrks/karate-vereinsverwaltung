@@ -70,7 +70,7 @@ export function Dashboard() {
           <h3>Zu erledigen</h3>
           <ul className="todo">
             {d.changes > 0 && <li className="warn"><a href="#/daten">💾 {d.changes} Änderungen seit der letzten Sicherung – jetzt sichern</a></li>}
-            {!d.accounts.length && <li><a href="#/import">⇪ Ersten Kontoauszug (CSV) importieren</a></li>}
+            {!d.accounts.length && <li><a href="#/import">⇪ Erste Umsätze (CSV) importieren</a></li>}
             {d.open > 0 && <li><a href="#/konto" onClick={() => { try { localStorage.setItem('vv:bank.tab', '"einrichtung"'); } catch { /* egal */ } }}>🔗 {d.open} Buchungen noch nicht zugeordnet</a></li>}
             {d.incomplete > 0 && <li><a href="#/mitglieder" onClick={() => { try { localStorage.setItem('vv:members.filter', '"unvollstaendig"'); } catch { /* egal */ } }}>👤 {d.incomplete} Mitglieder mit fehlenden Angaben</a></li>}
             {d.unabgeglichen.length > 0 && <li className="warn"><a href="#/konto" onClick={() => { try { localStorage.setItem('vv:bank.tab', '"konten"'); } catch { /* egal */ } }}>🏦 Kontostand noch nicht abgeglichen ({d.unabgeglichen.map((a) => a.name).join(', ')}) – einmal den aktuellen Kontostand eingeben</a></li>}
