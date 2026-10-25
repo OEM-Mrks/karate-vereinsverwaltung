@@ -481,3 +481,23 @@ main { padding: 26px 32px 60px; max-width: 1400px; }
 .table.compact td, .table.compact th { padding: 4px 6px; }
 .actions-cell { white-space: nowrap; text-align: right; }
 .forecast th { font-weight: 600; white-space: nowrap; }
+
+/* Tagesordnung (Mitgliederversammlung) */
+.agenda { list-style: none; margin: 0; padding: 0; }
+.agenda li { border-top: 1px solid var(--border); padding: 6px 0; }
+.agenda li:first-child { border-top: none; }
+.agenda li.inaktiv .agenda-titel, .agenda li.inaktiv .agenda-nr { color: var(--muted); }
+.agenda-row { display: grid; grid-template-columns: 18px 52px minmax(0, 1fr); align-items: center; gap: 10px; }
+.agenda-main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
+.agenda-row > input[type='checkbox'] { width: 18px; height: 18px; flex: none; }
+.agenda-nr { flex: none; width: 52px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.agenda-titel { flex: 1 1 320px; min-width: 0; border-color: transparent; background: transparent; font-weight: 600; }
+.agenda-titel:hover, .agenda-titel:focus { border-color: var(--border); background: var(--surface); }
+.agenda-tools { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; }
+.agenda-tools .checkbox { margin: 0; }
+.agenda-details { margin: 4px 0 0 90px; width: calc(100% - 90px); font-size: 13px; }
+.agenda-add { display: flex; gap: 8px; margin-top: 10px; }
+.agenda-add input { flex: 1; }
+@media (max-width: 720px) {
+  .agenda-details { margin-left: 0; width: 100%; }
+}

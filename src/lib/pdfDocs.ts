@@ -12,7 +12,8 @@ import { baseDoc, eur, FARBE, signatures, table } from './pdf';
 import type { Report, ReportLine } from './report';
 import { shiftYear } from './report';
 import { getVereinsdaten, namesFor, signatory } from './verein';
-import type { Teilnehmer, VersammlungOptionen } from './versammlung';
+import type { Tagesordnung, Teilnehmer, VersammlungOptionen } from './versammlung';
+import { tops } from './versammlung';
 
 function zeitraumText(r: Report): string {
   return r.ganzesJahr ? `Geschäftsjahr ${r.jahr}` : `${formatDate(r.von)} – ${formatDate(r.bis)}`;
@@ -290,4 +291,100 @@ export function anwesenheitslistePdf(o: VersammlungOptionen, liste: Teilnehmer[]
     },
   ];
   return baseDoc(`${o.titel || 'Mitgliederversammlung'} · ${formatDate(o.datum)}`, content, { landscape: true });
+}
+
+// ---------- Einladung mit Tagesordnung, Protokollvorlage ----------
+
+function wannWo(o: VersammlungOptionen): Content {
+  const zeile = (label: string, value: string) => [{ text: label, color: FARBE.muted }, { text: value || '–', bold: true }];
+  return {
+    table: {
+      widths: [70, '*'],
+      body: [zeile('Datum', formatDate(o.datum)), zeile('Uhrzeit', o.uhrzeit ? `${o.uhrzeit} Uhr` : ''), zeile('Ort', o.ort)],
+    },
+    layout: 'noBorders',
+    margin: [0, 6, 0, 10],
+  };
+}
+
+export function einladungPdf(o: VersammlungOptionen, t: Tagesordnung): TDocumentDefinitions {
+  const v = getVereinsdaten();
+  const titel = o.titel || 'Mitgliederversammlung';
+  const content: Content[] = [
+    { text: 'Einladung', fontSize: 10, bold: true, color: FARBE.accent, margin: [0, 0, 0, 2] },
+    { text: titel, style: 'h1', margin: [0, 0, 0, 12] },
+    { text: 'Liebe Mitglieder,', margin: [0, 0, 0, 6] },
+    { text: t.einladung.trim(), margin: [0, 0, 0, 4] },
+    wannWo(o),
+    { text: 'Tagesordnung', style: 'h2', margin: [0, 6, 0, 6] },
+    {
+      table: {
+        widths: [44, '*'],
+        body: tops(t).map((p): TableCell[] => [
+          { text: `TOP ${p.nr}`, bold: true, color: FARBE.muted },
+          { stack: [{ text: p.titel, bold: true }, ...(p.details.trim() ? [{ text: p.details.trim(), fontSize: 8.5, color: FARBE.muted }] : [])] },
+        ]),
+      },
+      layout: {
+        hLineWidth: (i: number, node: { table: { body: unknown[] } }) => (i === 0 || i === node.table.body.length ? 0 : 0.3),
+        vLineWidth: () => 0,
+        hLineColor: () => FARBE.line,
+        paddingTop: () => 4,
+        paddingBottom: () => 4,
+        paddingLeft: () => 0,
+      },
+    },
+    ...(t.antragsfrist ? [{
+      text: `Anträge zur Tagesordnung sind bis zum ${formatDate(t.antragsfrist)} schriftlich beim Vorstand einzureichen.`,
+      margin: [0, 12, 0, 0],
+    } as Content] : []),
+    { text: 'Wir freuen uns auf euer Kommen.', margin: [0, 12, 0, 18] },
+    { unbreakable: true, stack: [{ text: 'Mit sportlichen Grüßen' }, { text: `\n\n${signatory()}\n${v.verein_name}` }] },
+  ];
+  return baseDoc(`Einladung · ${titel}`, content, { letter: true });
+}
+
+export function protokollPdf(o: VersammlungOptionen, t: Tagesordnung): TDocumentDefinitions {
+  const titel = o.titel || 'Mitgliederversammlung';
+  const linien = (n: number): Content => ({
+    canvas: Array.from({ length: n }, (_, i) => ({ type: 'line' as const, x1: 0, y1: 18 + i * 20, x2: 483, y2: 18 + i * 20, lineWidth: 0.3, lineColor: FARBE.line })),
+    margin: [0, 0, 0, 4],
+  });
+  const feld = (label: string) => ({ text: [{ text: `${label}: `, color: FARBE.muted }, '______________________'] });
+  const content: Content[] = [
+    { text: 'Protokoll', fontSize: 10, bold: true, color: FARBE.accent, margin: [0, 0, 0, 2] },
+    { text: titel, style: 'h1' },
+    { text: [formatDate(o.datum), o.ort].filter(Boolean).join(' · '), style: 'sub' },
+    {
+      columns: [
+        { stack: [feld('Beginn'), feld('Versammlungsleitung'), feld('Anwesende Mitglieder')], width: '*' },
+        { stack: [feld('Ende'), feld('Protokollführung'), feld('davon stimmberechtigt')], width: '*' },
+      ],
+      columnGap: 20,
+      fontSize: 9,
+      lineHeight: 1.6,
+      margin: [0, 0, 0, 6],
+    },
+    { text: 'Die Anwesenheitsliste ist dem Protokoll als Anlage beigefügt.', fontSize: 8, color: FARBE.muted, margin: [0, 0, 0, 6] },
+    ...tops(t).map((p): Content => ({
+      unbreakable: true,
+      stack: [
+        { text: `TOP ${p.nr}: ${p.titel}`, bold: true, fontSize: 10.5, margin: [0, 10, 0, 1] },
+        ...(p.details.trim() ? [{ text: p.details.trim(), fontSize: 8, color: FARBE.muted } as Content] : []),
+        linien(p.abstimmung ? 3 : 4),
+        ...(p.abstimmung ? [{
+          text: [
+            { text: 'Abstimmung:  ', color: FARBE.muted },
+            'Ja ______    Nein ______    Enthaltung ______    ',
+            { text: 'Ergebnis: ', color: FARBE.muted },
+            'angenommen / abgelehnt',
+          ],
+          fontSize: 8.5,
+          margin: [0, 2, 0, 0],
+        } as Content] : []),
+      ],
+    })),
+    signatures(['Versammlungsleitung', 'Protokollführung']),
+  ];
+  return baseDoc(`Protokoll ${formatDate(o.datum)}`, content);
 }
