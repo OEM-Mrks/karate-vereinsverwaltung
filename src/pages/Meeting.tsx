@@ -12,7 +12,9 @@ import {
   type Tagesordnung, type TopPunkt, type VersammlungOptionen,
 } from '../lib/versammlung';
 import { PdfPreview } from '../components/PdfPreview';
-import { attempt, Badge, Checkbox, DateInput, Empty, Field, PageHeader, Select, Tabs, TextArea, TextInput } from '../components/ui';
+import { downloadBlob } from '../db/storage';
+import { docxBlob, DOCX_MIME, protokollDocx } from '../lib/protokollDocx';
+import { attempt, Badge, Checkbox, DateInput, Empty, Field, PageHeader, Select, Tabs, TextArea, TextInput, toast } from '../components/ui';
 
 const standard = (): VersammlungOptionen => ({
   titel: `Ordentliche Mitgliederversammlung ${new Date().getFullYear()}`,
@@ -89,6 +91,20 @@ function TagesordnungEditor({ o, set, onPdf }: {
     setNeu('');
   };
   const nummern = new Map(tops(t).map((p) => [p.id, p.nr]));
+  const [wordLaeuft, setWordLaeuft] = useState(false);
+  const eckdatenJahr = () => (o.eckdaten === false ? undefined : jahresbericht(berichtsjahrVon(o)));
+  const pruefungenGewaehlt = () => (o.eckdaten === false ? [] : pruefungsjahreVon(o).map(pruefungsStand));
+  const word = async () => {
+    setWordLaeuft(true);
+    try {
+      const blob = await docxBlob(protokollDocx(o, t, eckdatenJahr(), pruefungenGewaehlt()));
+      downloadBlob(blob, `Protokoll_Mitgliederversammlung_${o.datum}.docx`, DOCX_MIME);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'bad');
+    } finally {
+      setWordLaeuft(false);
+    }
+  };
   // Wählbar: alle Jahre mit Kassenprüfung, Berichtsjahr und Vorjahr (falls über zwei Jahre berichtet wird), bereits gewählte Jahre
   const pruefungen = useQuery(() => all<Audit>('SELECT * FROM audits'));
   const jahre = [...new Set([...pruefungen.map((p) => p.jahr), berichtsjahrVon(o), berichtsjahrVon(o) - 1, ...pruefungsjahreVon(o)])].sort((a, b) => b - a);
@@ -107,12 +123,11 @@ function TagesordnungEditor({ o, set, onPdf }: {
             <button disabled={!anzahl} onClick={() => onPdf({
               title: 'Protokollvorlage',
               filename: `Protokoll_Mitgliederversammlung_${o.datum}.pdf`,
-              build: () => protokollPdf(
-                o, t,
-                o.eckdaten === false ? undefined : jahresbericht(berichtsjahrVon(o)),
-                o.eckdaten === false ? [] : pruefungsjahreVon(o).map(pruefungsStand),
-              ),
+              build: () => protokollPdf(o, t, eckdatenJahr(), pruefungenGewaehlt()),
             })}>Protokollvorlage (PDF)</button>
+            <button disabled={!anzahl || wordLaeuft} onClick={() => void word()} title="Zum Ausfüllen am Tablet oder Laptop während der Versammlung">
+              {wordLaeuft ? 'Wird erstellt …' : 'Protokollvorlage (Word)'}
+            </button>
           </div>
         </div>
         <div className="mb">

@@ -15,6 +15,7 @@ import { getVereinsdaten, namesFor, signatory } from './verein';
 import type { Jahresbericht, PruefungsStand } from './kennzahlen';
 import { beitragsStatistik, datenstand, mitgliederStatistik, prognose, pruefungsStand } from './kennzahlen';
 import { MONATE } from './recurring';
+import { kassenberichtEckdaten, plural, pruefberichtEckdaten, type Eckdaten } from './protokoll';
 import type { Tagesordnung, Teilnehmer, TopPunkt, VersammlungOptionen } from './versammlung';
 import { tops } from './versammlung';
 
@@ -370,42 +371,8 @@ function eckdaten(titel: string, zeilen: [string, string][], fuss?: string): Con
   };
 }
 
-const plural = (n: number, eins: string, mehr: string) => `${n} ${n === 1 ? eins : mehr}`;
-
-/** Eckpunkte für den Bericht des Kassenwarts – nur Statistik, keine Namen. */
-export function kassenberichtDaten(d: Jahresbericht): Content {
-  const { report: r, mitglieder: m, beitraege: b } = d;
-  const bis = formatDate(r.bis);
-  return eckdaten(`Eckdaten Geschäftsjahr ${r.jahr}${r.ganzesJahr ? '' : ` (Stand ${bis})`}`, [
-    [`Kontostand ${formatDate(r.von)}`, eur(r.kontoAnfang)],
-    ['Einnahmen', eur(r.summeEin)],
-    ['Ausgaben', eur(r.summeAus)],
-    [r.ganzesJahr ? 'Jahresergebnis' : 'Ergebnis bisher', eur(r.ergebnis)],
-    ...(r.summeNeutral || r.unzugeordnet.summe ? [['Neutrale/nicht zugeordnete Buchungen', eur(r.summeNeutral + r.unzugeordnet.summe)] as [string, string]] : []),
-    [`Kontostand ${bis}`, eur(r.kontoEnde)],
-    [`Aktive Mitglieder ${bis}`, `${m.aktiv}${m.minderjaehrig ? ` (davon ${m.minderjaehrig} minderjährig)` : ''}`],
-    ['Ehrenmitglieder', String(m.ehrenmitglieder)],
-    [`Eintritte / Austritte ${r.jahr}`, `${m.eintritte} / ${m.austritte}`],
-    ['Vorliegende Kündigungen', m.kuendigungen ? `${plural(m.kuendigungen, 'Mitglied scheidet', 'Mitglieder scheiden')} zum Stichtag oder später aus` : 'keine'],
-    ['Mitgliedsbeiträge Soll / bezahlt', `${eur(b.soll)} / ${eur(b.bezahlt)}`],
-    ['Beitragsrückstände', b.mitRueckstand ? `${plural(b.mitRueckstand, 'Mitglied', 'Mitglieder')}, zusammen ${eur(b.ueberfaellig)}` : 'keine – alle fälligen Beiträge sind bezahlt'],
-    ...(r.fehlendeBelege ? [['Buchungen ohne vollständige Belege', String(r.fehlendeBelege)] as [string, string]] : []),
-  ], 'Automatisch aus der Vereinsverwaltung erzeugt – Mitgliederangaben nur als Anzahl, ohne Namen.');
-}
-
-/** Eckpunkte für den Bericht der Kassenprüfer. */
-export function pruefberichtDaten(p: PruefungsStand): Content {
-  if (!p.vorhanden) return eckdaten(`Kassenprüfung ${p.jahr}`, [['Stand', 'Für dieses Geschäftsjahr ist noch keine Kassenprüfung erfasst.']]);
-  return eckdaten(`Kassenprüfung ${p.jahr}`, [
-    ['Prüfung am', p.pruefdatum ? formatDate(p.pruefdatum) : '–'],
-    ...(p.pruefer.length ? [['Kassenprüfer/innen', p.pruefer.join(', ')] as [string, string]] : []),
-    ['Geprüfte Buchungen', `${p.geprueft} von ${p.gesamt}`],
-    ['Offene Rückfragen', p.offeneFragen ? String(p.offeneFragen) : 'keine'],
-    ...p.hinweise.map((h): [string, string] => [h.ok ? 'In Ordnung' : 'Hinweis', h.text]),
-    ...(p.feststellungen?.trim() ? [['Feststellungen', p.feststellungen.trim()] as [string, string]] : []),
-    ['Empfehlung', p.entlastung ? 'Entlastung des Vorstands' : 'keine Empfehlung zur Entlastung'],
-  ]);
-}
+/** Eckdaten-Block als grauer Kasten. */
+const eckdatenKasten = (e: Eckdaten) => eckdaten(e.titel, e.zeilen, e.fuss);
 
 /**
  * Protokollvorlage. Mit `daten` stehen beim Bericht des Kassenwarts die Eckdaten des Berichtsjahres;
@@ -441,8 +408,8 @@ export function protokollPdf(o: VersammlungOptionen, t: Tagesordnung, daten?: Ja
       stack: [
         { text: `TOP ${p.nr}: ${p.titel}`, bold: true, fontSize: 10.5, margin: [0, 10, 0, 1] },
         ...(p.details.trim() ? [{ text: p.details.trim(), fontSize: 8, color: FARBE.muted } as Content] : []),
-        ...(daten && p.standard === 'bericht_kasse' ? [kassenberichtDaten(daten)] : []),
-        ...(p.standard === 'bericht_pruefer' ? pruef.map(pruefberichtDaten) : []),
+        ...(daten && p.standard === 'bericht_kasse' ? [eckdatenKasten(kassenberichtEckdaten(daten))] : []),
+        ...(p.standard === 'bericht_pruefer' ? pruef.map((x) => eckdatenKasten(pruefberichtEckdaten(x))) : []),
         linien(mitDaten(p) ? 2 : p.abstimmung ? 3 : 4),
         ...(p.abstimmung ? [{
           text: [

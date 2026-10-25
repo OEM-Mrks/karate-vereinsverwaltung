@@ -25,6 +25,7 @@ Browser
 - **CSP** im Build: `default-src 'none'`, `connect-src 'self' data: blob:` – keine externen Verbindungen möglich.
 - **Ein Tab gleichzeitig** (Web Locks API), damit sich zwei Fenster nicht gegenseitig überschreiben.
 - **Geld in Cent** (Integer), **Datum als ISO-Text** (`yyyy-mm-dd`).
+- **Dokumente** entstehen im Browser: PDF mit pdfmake (Schrift eingebettet), Word (.docx) mit `docx` – gemeinsame Inhalte (z. B. Eckdaten der Protokollvorlage) liegen in `src/lib/protokoll.ts`.
 
 ## Datenmodell (SQLite)
 

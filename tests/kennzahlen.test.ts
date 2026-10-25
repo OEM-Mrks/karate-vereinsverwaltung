@@ -69,3 +69,25 @@ it('Protokollvorlage berichtet über die gewählten Prüfungsjahre', async () =>
   };
   expect((await pdfBlob(protokollPdf(o, ladeTagesordnung(o.datum), jahresbericht(year - 1), p))).size).toBeGreaterThan(1000);
 });
+
+it('Protokollvorlage als Word-Dokument mit Tagesordnung und Eckdaten, ohne Namen', async () => {
+  const { default: JSZip } = await import('jszip');
+  const { docxBlob, protokollDocx } = await import('../src/lib/protokollDocx');
+  const o = {
+    titel: 'Ordentliche Mitgliederversammlung', datum: `${year}-03-01`, uhrzeit: '19:00', ort: 'Vereinsheim', anschrift: true, telefon: true,
+    email: false, minderjaehrige: true, leerzeilen: 0, sortierung: 'name' as const,
+  };
+  startAudit(year - 1, { pruefer: 'Prüfer Eins', pruefdatum: `${year}-02-01`, ort: '', umfang: 'alle' });
+  const blob = await docxBlob(protokollDocx(o, ladeTagesordnung(o.datum), jahresbericht(year - 1), [pruefungsStand(year - 1)]));
+  const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+  const xml = await zip.file('word/document.xml')!.async('string');
+  const textInhalt = xml.replace(/<[^>]+>/g, ' ');
+  expect(textInhalt).toContain('TOP 6: Bericht des Kassenwarts');
+  expect(textInhalt).toContain(`Eckdaten Geschäftsjahr ${year - 1}`);
+  expect(textInhalt).toContain(`Kassenprüfung ${year - 1}`);
+  expect(textInhalt).toContain('Prüfer Eins');
+  expect(textInhalt).toContain('Notizen:');
+  // keine Mitgliedernamen aus dem Demoverein
+  const namen = (await import('../src/db/db')).all<{ nachname: string }>('SELECT nachname FROM members');
+  for (const n of namen) expect(textInhalt).not.toContain(n.nachname);
+});
