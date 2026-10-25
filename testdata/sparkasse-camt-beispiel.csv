@@ -1,0 +1,7 @@
+"Auftragskonto";"Buchungstag";"Valutadatum";"Buchungstext";"Verwendungszweck";"Glaeubiger ID";"Mandatsreferenz";"Kundenreferenz (End-to-End)";"Sammlerreferenz";"Lastschrift Ursprungsbetrag";"Auslagenersatz Ruecklastschrift";"Beguenstigter/Zahlungspflichtiger";"Kontonummer/IBAN";"BIC (SWIFT-Code)";"Betrag";"Waehrung";"Info"
+"DE02120300000000202051";"02.01.26";"02.01.26";"GUTSCHR. UEBERW. DAUERAUFTR";"Mitgliedsbeitrag 2026 Jonas Müller";"";"";"NOTPROVIDED";"";"";"";"Petra Müller";"DE89370400440532013000";"COBADEFFXXX";"216,00";"EUR";"Umsatz gebucht"
+"DE02120300000000202051";"05.01.26";"05.01.26";"GUTSCHR. UEBERW.";"Beitrag Mitgl.-Nr. 1002";"";"";"";"";"";"";"Sabine Schäfer";"DE75512108001245126199";"SOGEDEFFXXX";"300,00";"EUR";"Umsatz gebucht"
+"DE02120300000000202051";"10.01.26";"10.01.26";"FOLGELASTSCHRIFT";"Hallenmiete Januar 2026 Sporthalle Nord";"DE98ZZZ09999999999";"HM-2026-01";"";"";"";"";"Stadt Musterstadt";"DE12500105170648489890";"INGDDEFFXXX";"-150,00";"EUR";"Umsatz gebucht"
+"DE02120300000000202051";"15.01.26";"15.01.26";"ONLINE-UEBERWEISUNG";"Rechnung 4711 Gürtel und Anzüge";"";"";"";"";"";"";"Budo-Shop GmbH";"DE44500105175407324931";"INGDDEFFXXX";"-1.234,56";"EUR";"Umsatz gebucht"
+"DE02120300000000202051";"30.01.26";"30.01.26";"ENTGELTABSCHLUSS";"Entgeltabrechnung siehe Anlage";"";"";"";"";"";"";"";"0000000000";"";"-9,90";"EUR";"Umsatz gebucht"
+"DE02120300000000202051";"31.01.26";"31.01.26";"GUTSCHR. UEBERW.";"Spende Sommerfest";"";"";"";"";"";"";"Max Mustermann";"DE02100500000054540402";"BELADEBEXXX";"50,00";"EUR";"Umsatz vorgemerkt"

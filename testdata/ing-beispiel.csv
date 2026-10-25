@@ -1,0 +1,9 @@
+Umsatzanzeige;Datei erstellt am: 01.03.2026 10:00
+;
+IBAN;DE02 1203 0000 0000 2020 51
+Kontoname;Vereinskonto
+Bank;ING
+;
+Buchung;Wertstellungsdatum;Auftraggeber/Empfänger;Buchungstext;Verwendungszweck;Saldo;Währung;Betrag;Währung
+01.03.2026;01.03.2026;Deutscher Karate Verband;Lastschrift;Jahresbeitrag Verband 2026;4.000,00;EUR;-120,00;EUR
+02.03.2026;02.03.2026;Lea Schmidt;Gutschrift;Beitrag März;4.025,00;EUR;25,00;EUR
