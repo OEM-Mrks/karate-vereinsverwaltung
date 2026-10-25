@@ -4,6 +4,7 @@ import type { Category, Partner, Rule } from '../db/schema';
 import { SPHAEREN } from '../db/schema';
 import { useQuery } from '../hooks';
 import { autoAssign } from '../lib/bank';
+import { bulkSetPartner, partnerBackfillCandidates } from '../lib/bulk';
 import { formatEUR, formatIBAN, isValidIBAN, normalizeIBAN } from '../lib/format';
 import { categoryOptions, memberOptions, PARTNER_TYPEN, partnerOptions } from '../lib/lookups';
 import { attempt, Badge, Checkbox, Empty, Field, Modal, MoneyInput, PageHeader, Select, TextArea, TextInput, toast } from '../components/ui';
@@ -72,6 +73,7 @@ function PartnerDialog({ p, onClose }: { p: Partial<Partner>; onClose: () => voi
     }
     onClose();
   };
+  const backfill = useQuery(() => (p.id ? partnerBackfillCandidates(p.id) : []), [p.id]);
   const remove = () => confirm(`„${p.name}" löschen? Zuordnungen bleiben erhalten, verlieren aber den Partner.`) && attempt(() => run('DELETE FROM partners WHERE id = ?', [p.id!]), 'Gelöscht') && onClose();
   return (
     <Modal title={isNew ? 'Neuer Lieferant / Partner' : v.name} onClose={onClose}
@@ -89,6 +91,16 @@ function PartnerDialog({ p, onClose }: { p: Partial<Partner>; onClose: () => voi
         <Field label="Anschrift" span={2}><TextArea value={v.anschrift} onChange={set('anschrift')} rows={2} /></Field>
         <Field label="Notizen" span={2}><TextArea value={v.notizen} onChange={set('notizen')} rows={2} /></Field>
       </div>
+      {backfill.length > 0 && (
+        <div className="callout">
+          {backfill.length} Buchung{backfill.length === 1 ? '' : 'en'} passen zu {p.name} (IBAN bzw. Name), haben aber noch keinen Lieferanten.
+          <div className="mt">
+            <button onClick={() => attempt(() => { const r = bulkSetPartner(backfill, p.id!); toast(`${r.geaendert} Buchungen ergänzt`); })}>
+              Lieferant bei {backfill.length} Buchung{backfill.length === 1 ? '' : 'en'} nachtragen
+            </button>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

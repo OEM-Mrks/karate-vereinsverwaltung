@@ -39,8 +39,11 @@ export function Dashboard() {
     const lastTx = scalar<string>('SELECT MAX(buchungsdatum) FROM transactions');
     const changes = Number(getSetting('changes_since_export', '0'));
     const req = requiredFields();
+    // Kontostand zum 31.12. des Vorjahres laut Auszug erfasst?
+    const ultimo = `${year - 1}-12-31`;
+    const ohneAuszug = accounts.filter((a) => a.anfangsdatum <= ultimo && !scalar('SELECT 1 FROM balance_checkpoints WHERE account_id = ? AND datum = ?', [a.id, ultimo]));
     const incomplete = members.filter((m) => (!m.austritt || m.austritt >= today) && missingFields(m, req).length).length;
-    return { members, active, offenFaellig, debtors, saldo, open, r, upcomingExits, recentJoins, gradeCounts, lastTx, accounts, changes, incomplete };
+    return { members, active, offenFaellig, debtors, saldo, open, r, upcomingExits, recentJoins, gradeCounts, lastTx, accounts, changes, incomplete, ohneAuszug };
   });
   const frist = Number(getSetting('kuendigungsfrist_monate', '3')) || 3;
   const maxGrade = Math.max(1, ...d.gradeCounts.map((x) => x.n));
@@ -63,9 +66,10 @@ export function Dashboard() {
             {!d.accounts.length && <li><a href="#/import">⇪ Ersten Kontoauszug (CSV) importieren</a></li>}
             {d.open > 0 && <li><a href="#/konto" onClick={() => { try { localStorage.setItem('vv:bank.tab', '"einrichtung"'); } catch { /* egal */ } }}>🔗 {d.open} Buchungen noch nicht zugeordnet</a></li>}
             {d.incomplete > 0 && <li><a href="#/mitglieder" onClick={() => { try { localStorage.setItem('vv:members.filter', '"unvollstaendig"'); } catch { /* egal */ } }}>👤 {d.incomplete} Mitglieder mit fehlenden Angaben</a></li>}
+            {d.ohneAuszug.length > 0 && <li><a href="#/konto" onClick={() => { try { localStorage.setItem('vv:bank.tab', '"konten"'); } catch { /* egal */ } }}>🏦 Kontostand 31.12.{year - 1} laut Auszug noch nicht erfasst ({d.ohneAuszug.map((a) => a.name).join(', ')})</a></li>}
             {d.r.fehlendeBelege > 0 && <li><a href="#/belege">📄 {d.r.fehlendeBelege} Buchungen {year} ohne Beleg</a></li>}
             {d.members.length === 0 && <li><a href="#/mitglieder">👤 Mitglieder anlegen</a></li>}
-            {d.changes === 0 && d.open === 0 && d.r.fehlendeBelege === 0 && d.incomplete === 0 && d.accounts.length > 0 && <li className="ok">✓ Alles erledigt</li>}
+            {d.changes === 0 && d.open === 0 && d.r.fehlendeBelege === 0 && d.incomplete === 0 && d.ohneAuszug.length === 0 && d.accounts.length > 0 && <li className="ok">✓ Alles erledigt</li>}
           </ul>
           <div className="callout">
             <strong>Kündigung heute eingehend:</strong> frühester Austritt zum <strong>{formatDate(earliestExitDate(today, frist))}</strong>

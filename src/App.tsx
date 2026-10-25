@@ -13,6 +13,7 @@ import { DocumentsPage } from './pages/Documents';
 import { CategoriesPage, PartnersPage, RulesPage } from './pages/MasterData';
 import { ReportPage } from './pages/Report';
 import { DataPage } from './pages/DataPage';
+import { AuditPage } from './pages/Audit';
 
 const NAV: { id: string; label: string; icon: string; group?: string }[] = [
   { id: 'uebersicht', label: 'Übersicht', icon: '◉' },
@@ -22,6 +23,7 @@ const NAV: { id: string; label: string; icon: string; group?: string }[] = [
   { id: 'import', label: 'CSV-Import', icon: '⇪' },
   { id: 'belege', label: 'Belege', icon: '📄' },
   { id: 'guv', label: 'GuV', icon: '📊' },
+  { id: 'kassenpruefung', label: 'Kassenprüfung', icon: '✓' },
   { id: 'partner', label: 'Lieferanten', icon: '🏷', group: 'Stammdaten' },
   { id: 'kategorien', label: 'Kategorien', icon: '▤' },
   { id: 'regeln', label: 'Regeln', icon: '⚡' },
@@ -51,6 +53,7 @@ function Shell({ onWiped }: { onWiped: () => void }) {
     case 'import': content = <ImportPage />; break;
     case 'belege': content = <DocumentsPage />; break;
     case 'guv': content = <ReportPage />; break;
+    case 'kassenpruefung': content = <AuditPage />; break;
     case 'partner': content = <PartnersPage />; break;
     case 'kategorien': content = <CategoriesPage />; break;
     case 'regeln': content = <RulesPage />; break;

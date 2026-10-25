@@ -414,3 +414,30 @@ main { padding: 26px 32px 60px; max-width: 1400px; }
 .setup-table td:first-child { max-width: 340px; }
 .missing { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 2px 16px; }
+
+/* ---------- Sammelbearbeitung ---------- */
+.check-col { width: 32px; padding-right: 0 !important; }
+.table tr.selected td { background: var(--info-soft); }
+.bulk-bar {
+  position: sticky; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
+  background: var(--surface); border: 2px solid var(--info); border-radius: var(--radius); padding: 10px 14px; box-shadow: var(--shadow);
+}
+.bulk-group { display: inline-flex; gap: 4px; align-items: center; }
+.bulk-group select { width: 220px; }
+.callout.ok { background: var(--ok-soft); color: var(--ok); }
+
+/* ---------- Kassenprüfung ---------- */
+.progress { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+.progress span { display: block; height: 100%; background: var(--ok); }
+.checklist { list-style: none; padding: 0; margin: 0; }
+.checklist li { padding: 4px 0; }
+.checklist li.ok { color: var(--ok); }
+.checklist li.warn { color: var(--warn); }
+.audit-grid { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; }
+.audit-doc { position: sticky; top: 12px; min-height: 60vh; }
+.audit-doc .doc-frame { min-height: 75vh; }
+.doc-preview { display: flex; flex-direction: column; gap: 6px; }
+.big { font-size: 22px; margin: 2px 0 0; }
+.link.strong { font-weight: 700; }
+.answer input { min-width: 180px; }
+@media (max-width: 900px) { .audit-grid { grid-template-columns: 1fr; } .audit-doc { position: static; } }

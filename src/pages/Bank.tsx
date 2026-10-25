@@ -10,6 +10,7 @@ import { categories, categoryLabel, categoryOptions, memberName, memberOptions, 
 import { TransactionDocs } from '../components/Docs';
 import { QuickMemberDialog, QuickPartnerDialog } from '../components/QuickCreate';
 import { SetupByPayer } from './Setup';
+import { bulkClear, bulkSetCategory, bulkSetChecked, bulkSetPartner, similarWithoutPartner } from '../lib/bulk';
 import {
   attempt, Badge, Checkbox, DateInput, Empty, Field, Modal, MoneyInput, PageHeader, Select, Stat, Tabs, TextArea, TextInput, toast, YearSelect,
 } from '../components/ui';
@@ -72,7 +73,7 @@ function loadRows(year: number, accountId: number | null): Row[] {
   });
 }
 
-type StatusFilter = 'alle' | 'offen' | 'auto' | 'erledigt' | 'beleg' | 'ein' | 'aus';
+type StatusFilter = 'alle' | 'offen' | 'auto' | 'erledigt' | 'beleg' | 'ohnePartner' | 'ein' | 'aus';
 
 function TransactionList() {
   const [year, setYear] = useLocalState('year', new Date().getFullYear());
@@ -80,6 +81,7 @@ function TransactionList() {
   const [status, setStatus] = useLocalState<StatusFilter>('bank.status', 'alle');
   const [search, setSearch] = useState('');
   const [newTx, setNewTx] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const accounts = useQuery(() => all<Account>('SELECT * FROM accounts ORDER BY id'));
   const rows = useQuery(() => loadRows(year, accountId), [year, accountId]);
   const q = search.trim().toLowerCase();
@@ -88,6 +90,7 @@ function TransactionList() {
     if (status === 'auto' && r.status !== 'auto') return false;
     if (status === 'erledigt' && !(r.status === 'zugeordnet' || r.status === 'geprueft')) return false;
     if (status === 'beleg' && !r.belegFehlt) return false;
+    if (status === 'ohnePartner' && !(r.betrag_cent < 0 && r.allocs.length && !r.allocs.some((a) => a.partner_id || a.member_id))) return false;
     if (status === 'ein' && r.betrag_cent < 0) return false;
     if (status === 'aus' && r.betrag_cent > 0) return false;
     if (!q) return true;
@@ -112,7 +115,7 @@ function TransactionList() {
     <>
       <div className="stats">
         <Stat label="Einnahmen (Auswahl)" value={formatEUR(ein)} tone="ok" />
-        <Stat label="Ausgaben (Auswahl)" value={formatEUR(-aus)} tone="bad" />
+        <Stat label="Ausgaben (Auswahl)" value={formatEUR(-aus || 0)} tone="bad" />
         <Stat label="Saldo (Auswahl)" value={formatEUR(ein + aus)} />
         <Stat label="Nicht zugeordnet" value={openCount} tone={openCount ? 'warn' : 'ok'} onClick={() => setStatus('offen')} sub={autoCount ? `${autoCount} automatisch, ungeprüft` : undefined} />
       </div>
@@ -125,6 +128,7 @@ function TransactionList() {
           <option value="auto">Automatisch zugeordnet (ungeprüft)</option>
           <option value="erledigt">Zugeordnet / geprüft</option>
           <option value="beleg">Beleg fehlt</option>
+          <option value="ohnePartner">Ausgaben ohne Lieferant</option>
           <option value="ein">Nur Einnahmen</option>
           <option value="aus">Nur Ausgaben</option>
         </select>
@@ -134,6 +138,13 @@ function TransactionList() {
         {autoCount > 0 && <button onClick={confirmAuto}>Automatische bestätigen</button>}
         <button onClick={runAuto}>⚡ Automatisch zuordnen</button>
       </div>
+      {selected.size > 0 && (
+        <BulkBar
+          ids={[...selected].filter((id) => rows.some((r) => r.id === id))}
+          summe={rows.filter((r) => selected.has(r.id)).reduce((a, r) => a + r.betrag_cent, 0)}
+          onClear={() => setSelected(new Set())}
+        />
+      )}
       {rows.length === 0 ? (
         <Empty>
           Noch keine Buchungen für {year}. <a href="#/import">Kontoauszug als CSV importieren</a> – z. B. aus dem Online-Banking der Sparkasse unter „Umsätze → Export → CSV-CAMT".
@@ -142,11 +153,34 @@ function TransactionList() {
         <div className="table-wrap">
           <table className="table clickable-rows tx-table">
             <thead>
-              <tr><th>Datum</th><th>Zahlungspartner / Verwendungszweck</th><th>Zuordnung</th><th></th><th className="num">Betrag</th><th>Status</th></tr>
+              <tr>
+                <th className="check-col">
+                  <input
+                    type="checkbox"
+                    aria-label="Alle sichtbaren auswählen"
+                    checked={visible.length > 0 && visible.every((r) => selected.has(r.id))}
+                    onChange={(e) => setSelected(e.target.checked ? new Set([...selected, ...visible.map((r) => r.id)]) : new Set())}
+                  />
+                </th>
+                <th>Datum</th><th>Zahlungspartner / Verwendungszweck</th><th>Zuordnung</th><th></th><th className="num">Betrag</th><th>Status</th>
+              </tr>
             </thead>
             <tbody>
               {visible.map((r) => (
-                <tr key={r.id} onClick={() => navigate(`konto/${r.id}`)}>
+                <tr key={r.id} onClick={() => navigate(`konto/${r.id}`)} className={selected.has(r.id) ? 'selected' : ''}>
+                  <td className="check-col" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label="Buchung auswählen"
+                      checked={selected.has(r.id)}
+                      onChange={(e) => {
+                        const n = new Set(selected);
+                        if (e.target.checked) n.add(r.id);
+                        else n.delete(r.id);
+                        setSelected(n);
+                      }}
+                    />
+                  </td>
                   <td className="nowrap">{formatDate(r.buchungsdatum)}</td>
                   <td>
                     <strong>{r.gegen_name || r.buchungstext || '–'}</strong>
@@ -166,13 +200,42 @@ function TransactionList() {
                   <td><Badge tone={STATUS[r.status].tone} title={r.allocs.find((a) => a.auto)?.auto ?? undefined}>{STATUS[r.status].label}</Badge></td>
                 </tr>
               ))}
-              {!visible.length && <tr><td colSpan={6} className="empty">Keine Buchungen für diesen Filter.</td></tr>}
+              {!visible.length && <tr><td colSpan={7} className="empty">Keine Buchungen für diesen Filter.</td></tr>}
             </tbody>
           </table>
         </div>
       )}
       {newTx && <ManualTransaction accounts={accounts} onClose={() => setNewTx(false)} />}
     </>
+  );
+}
+
+function BulkBar({ ids, summe, onClear }: { ids: number[]; summe: number; onClear: () => void }) {
+  // Nach einer erfolgreichen Sammelaktion die Auswahl leeren – die Buchungen fallen oft aus dem aktuellen Filter
+  const [partner, setPartner] = useState<number | null>(null);
+  const [cat, setCat] = useState<number | null>(null);
+  const partOpts = useQuery(() => partnerOptions());
+  const catOpts = useQuery(() => categoryOptions());
+  const report = (r: { geaendert: number; uebersprungen: number }, was: string) => {
+    onClear();
+    toast(`${was}: ${r.geaendert} Buchung${r.geaendert === 1 ? '' : 'en'} geändert${r.uebersprungen ? `, ${r.uebersprungen} übersprungen (Splitbuchung bzw. Mitgliedszahlung)` : ''}`, r.uebersprungen ? 'info' : 'ok');
+  };
+  return (
+    <div className="bulk-bar">
+      <strong>{ids.length} ausgewählt</strong>
+      <span className="muted small">Summe {formatEUR(summe)}</span>
+      <span className="bulk-group">
+        <Select value={partner} onChange={setPartner} empty="Lieferant / Partner …" options={partOpts} />
+        <button disabled={!partner} onClick={() => partner && attempt(() => report(bulkSetPartner(ids, partner), 'Lieferant gesetzt'))}>setzen</button>
+      </span>
+      <span className="bulk-group">
+        <Select value={cat} onChange={setCat} empty="Kategorie …" options={catOpts} />
+        <button disabled={!cat} onClick={() => cat && attempt(() => report(bulkSetCategory(ids, cat), 'Kategorie gesetzt'))}>setzen</button>
+      </span>
+      <button onClick={() => attempt(() => bulkSetChecked(ids, true), 'Als geprüft markiert') && onClear()}>✓ geprüft</button>
+      <button className="danger-outline" onClick={() => confirm(`Zuordnung von ${ids.length} Buchungen entfernen?`) && attempt(() => bulkClear(ids), 'Zuordnungen entfernt') && onClear()}>Zuordnung entfernen</button>
+      <button className="link" onClick={onClear}>Auswahl aufheben</button>
+    </div>
   );
 }
 
@@ -224,6 +287,8 @@ export function AssignDialog({ id, onClose }: { id: number; onClose: () => void 
   const [notiz, setNotiz] = useState<string | null>(null);
   const [learnRule, setLearnRule] = useState(true);
   const [learnIban, setLearnIban] = useState(true);
+  const [applySimilar, setApplySimilar] = useState(true);
+  const similar = useQuery(() => (t ? similarWithoutPartner(t) : []), [t]);
   const iban = normalizeIBAN(t?.gegen_iban);
   const ruleExists = useQuery(() => (iban ? !!scalar('SELECT 1 FROM rules WHERE iban = ?', [iban]) : false), [iban]);
 
@@ -275,6 +340,11 @@ export function AssignDialog({ id, onClose }: { id: number; onClose: () => void 
           (geprueft ?? (changed ? true : !!t.geprueft)) ? 1 : 0, notiz ?? t.notiz, id,
         ]);
         if (offerRule && learnRule && changed) createRuleFromTransaction(t, { category_id: current[0].category_id, partner_id: current[0].partner_id });
+        const newPartner = current.find((l) => l.partner_id)?.partner_id;
+        if (newPartner && applySimilar && similar.length && !existing.some((a) => a.partner_id === newPartner)) {
+          const r = bulkSetPartner(similar, newPartner);
+          if (r.geaendert) toast(`Lieferant auch bei ${r.geaendert} weiteren Buchungen dieses Zahlungspartners eingetragen`, 'info');
+        }
         if (offerIban && learnIban) run('UPDATE members SET iban = ?, kontoinhaber = COALESCE(kontoinhaber, ?) WHERE id = ?', [iban, t.gegen_name, memberWithoutIban!.id]);
       }),
       'Zuordnung gespeichert',
@@ -364,6 +434,15 @@ export function AssignDialog({ id, onClose }: { id: number; onClose: () => void 
         </button>
         {existing.some((a) => a.auto) && lines === null && <Badge tone="info">automatisch: {existing.find((a) => a.auto)?.auto}</Badge>}
       </div>
+      {lines !== null && similar.length > 0 && current.some((l) => l.partner_id) && !existing.some((a) => a.partner_id && current.some((l) => l.partner_id === a.partner_id)) && (
+        <div className="callout">
+          <Checkbox
+            checked={applySimilar}
+            onChange={setApplySimilar}
+            label={<>Lieferant auch bei <strong>{similar.length} weiteren Buchungen</strong> von {t.gegen_name || iban} eintragen, die noch keinen Lieferanten haben</>}
+          />
+        </div>
+      )}
       {(offerRule || offerIban) && lines !== null && (
         <div className="callout">
           {offerRule && (
@@ -497,8 +576,8 @@ function AccountDialog({ a, onClose }: { a: Partial<Account>; onClose: () => voi
   );
 }
 
-function CheckpointDialog({ account, onClose }: { account: Account; onClose: () => void }) {
-  const [datum, setDatum] = useState<string | null>(`${new Date().getFullYear() - 1}-12-31`);
+export function CheckpointDialog({ account, onClose, datum: initialDate }: { account: Account; onClose: () => void; datum?: string }) {
+  const [datum, setDatum] = useState<string | null>(initialDate ?? `${new Date().getFullYear() - 1}-12-31`);
   const [saldo, setSaldo] = useState<number | null>(null);
   const [notiz, setNotiz] = useState('');
   const save = () =>

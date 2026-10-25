@@ -32,8 +32,16 @@ Keine Cloud, kein Server, kein Konto. Alle Daten liegen in einer SQLite-Datei, d
 - Lieferanten/Einkaufsquellen mit Standardkategorie
 - **Belege als PDF oder Foto** an jede Buchung hängen (Drag & Drop), fortlaufende Belegnummern, Liste fehlender Belege
 
+- **Sammelbearbeitung**: Buchungen anhaken (z. B. nach Suche „Ionos“) und Lieferant, Kategorie oder „geprüft“ für alle auf einmal setzen; Filter „Ausgaben ohne Lieferant“; beim Zuordnen eines Lieferanten auf Wunsch auch alle weiteren Buchungen desselben Zahlungspartners ergänzen
+
+**Kassenprüfung**
+- Beleg für Beleg am Bildschirm prüfen: Buchung links, PDF-Beleg rechts, abhaken mit Enter, Rückfragen mit Kommentar
+- Prüfprotokoll mit Antworten des Kassenwarts; Austausch per kleiner Protokolldatei, falls die Prüfer mit einer Kopie auf dem eigenen Rechner arbeiten
+- Automatische Prüfpunkte: Kontostand 31.12. laut Auszug = Buchungen, alles zugeordnet, Belege vollständig
+- **Bericht der Kassenprüfung** zum Unterschreiben (Kontenentwicklung, Einnahmen/Ausgaben je Bereich, Feststellungen, Entlastungsempfehlung, Prüfprotokoll als Anlage)
+
 **Gewinn- und Verlustrechnung**
-- Einnahmen-Überschuss-Rechnung nach Zahlungsfluss mit Vorjahresvergleich
+- Einnahmen-Überschuss-Rechnung nach Zahlungsfluss mit Vorjahresvergleich – für das ganze Jahr oder **unterjährig** (bis heute, Quartal, Halbjahr, Monat, frei wählbar)
 - **Kontostand zum 1.1. und 31.12.** je Konto und Abstimmung: Anfangsbestand + Einnahmen − Ausgaben = Endbestand
 - Vergleich mit dem Kontostand laut Kontoauszug – fehlende oder doppelte Importe fallen sofort auf
 - Drucken / als PDF speichern, Export als CSV

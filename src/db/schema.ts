@@ -1,6 +1,6 @@
 // Datenbankschema (SQLite). Alle Geldbeträge in Cent (INTEGER), alle Datumswerte als ISO-Text (yyyy-mm-dd).
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -222,6 +222,31 @@ CREATE TABLE IF NOT EXISTS documents (
   created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_docs_tx ON documents(transaction_id);
+
+-- Kassenprüfung je Geschäftsjahr
+CREATE TABLE IF NOT EXISTS audits (
+  id            INTEGER PRIMARY KEY,
+  jahr          INTEGER NOT NULL UNIQUE,
+  pruefer       TEXT,                 -- Namen, eine Zeile je Prüfer
+  pruefdatum    TEXT,
+  ort           TEXT,
+  umfang        TEXT NOT NULL DEFAULT 'alle',  -- alle | ausgaben | belegpflichtig
+  feststellungen TEXT,
+  entlastung    INTEGER NOT NULL DEFAULT 1,     -- Empfehlung zur Entlastung des Vorstands
+  abgeschlossen INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Prüfvermerk je Buchung
+CREATE TABLE IF NOT EXISTS audit_checks (
+  audit_id       INTEGER NOT NULL REFERENCES audits(id) ON DELETE CASCADE,
+  transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  status         TEXT NOT NULL CHECK (status IN ('ok','frage')),
+  kommentar      TEXT,   -- Rückfrage der Kassenprüfer
+  antwort        TEXT,   -- Antwort des Kassenwarts
+  geprueft_am    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (audit_id, transaction_id)
+);
 `;
 
 export type Sphaere = 'ideell' | 'vermoegen' | 'zweck' | 'wgb' | 'neutral';
@@ -294,6 +319,15 @@ export type Rule = {
   id: number; name: string; prioritaet: number; aktiv: number; iban: string | null; text_enthaelt: string | null;
   richtung: 'ein' | 'aus' | 'beide'; betrag_min_cent: number | null; betrag_max_cent: number | null;
   category_id: number | null; partner_id: number | null; member_id: number | null; treffer: number;
+};
+
+export type Audit = {
+  id: number; jahr: number; pruefer: string | null; pruefdatum: string | null; ort: string | null;
+  umfang: 'alle' | 'ausgaben' | 'belegpflichtig'; feststellungen: string | null; entlastung: number; abgeschlossen: number; created_at: string;
+};
+
+export type AuditCheck = {
+  audit_id: number; transaction_id: number; status: 'ok' | 'frage'; kommentar: string | null; antwort: string | null; geprueft_am: string;
 };
 
 export type DocumentMeta = {

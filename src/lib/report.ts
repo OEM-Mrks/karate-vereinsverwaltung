@@ -31,6 +31,9 @@ export type AccountBalance = {
 
 export type Report = {
   jahr: number;
+  von: string;
+  bis: string;
+  ganzesJahr: boolean;
   bloecke: SphereBlock[];
   summeEin: number;
   summeAus: number;
@@ -47,20 +50,28 @@ export type Report = {
   fehlendeBelege: number;
 };
 
-function sums(year: number) {
+/** Verschiebt ein ISO-Datum um n Jahre (29.02. → 28.02.). */
+export function shiftYear(iso: string, n: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const last = new Date(y + n, m, 0).getDate();
+  return `${y + n}-${String(m).padStart(2, '0')}-${String(Math.min(d, last)).padStart(2, '0')}`;
+}
+
+function sums(von: string, bis: string) {
   return all<{ category_id: number; summe: number; anzahl: number }>(
     `SELECT a.category_id, SUM(a.betrag_cent) AS summe, COUNT(*) AS anzahl
      FROM allocations a JOIN transactions t ON t.id = a.transaction_id
      WHERE a.category_id IS NOT NULL AND t.buchungsdatum BETWEEN ? AND ?
      GROUP BY a.category_id`,
-    [`${year}-01-01`, `${year}-12-31`],
+    [von, bis],
   );
 }
 
-export function buildReport(year: number): Report {
+/** GuV für ein Geschäftsjahr oder einen Zeitraum darin (unterjährig); Vergleich mit demselben Zeitraum des Vorjahres. */
+export function buildReport(year: number, von = `${year}-01-01`, bis = `${year}-12-31`): Report {
   const cats = all<Category>('SELECT * FROM categories ORDER BY nummer');
-  const cur = new Map(sums(year).map((r) => [r.category_id, r]));
-  const prev = new Map(sums(year - 1).map((r) => [r.category_id, r]));
+  const cur = new Map(sums(von, bis).map((r) => [r.category_id, r]));
+  const prev = new Map(sums(shiftYear(von, -1), shiftYear(bis, -1)).map((r) => [r.category_id, r]));
   const line = (c: Category): ReportLine => ({
     category: c,
     summe: cur.get(c.id)?.summe ?? 0,
@@ -101,18 +112,18 @@ export function buildReport(year: number): Report {
      LEFT JOIN (SELECT transaction_id, SUM(CASE WHEN category_id IS NOT NULL THEN betrag_cent ELSE 0 END) AS zugeordnet
                 FROM allocations GROUP BY transaction_id) x ON x.transaction_id = t.id
      WHERE t.buchungsdatum BETWEEN ? AND ? AND t.betrag_cent != COALESCE(x.zugeordnet, 0)`,
-    [`${year}-01-01`, `${year}-12-31`],
+    [von, bis],
   )[0] ?? { anzahl: 0, summe: 0 };
 
   // Kontostände
   const accounts = all<Account>('SELECT * FROM accounts ORDER BY id');
-  const checkpoints = all<BalanceCheckpoint>('SELECT * FROM balance_checkpoints WHERE datum = ?', [`${year}-12-31`]);
+  const checkpoints = all<BalanceCheckpoint>('SELECT * FROM balance_checkpoints WHERE datum = ?', [bis]);
   const konten: AccountBalance[] = accounts
-    .filter((a) => a.anfangsdatum <= `${year}-12-31`)
+    .filter((a) => a.anfangsdatum <= bis)
     .map((a) => {
-      const startDate = a.anfangsdatum > `${year}-01-01` ? a.anfangsdatum : `${year}-01-01`;
+      const startDate = a.anfangsdatum > von ? a.anfangsdatum : von;
       const anfang = balanceAtStartOf(a, startDate);
-      const ende = balanceAt(a, `${year}-12-31`);
+      const ende = balanceAt(a, bis);
       return {
         account: a,
         anfang,
@@ -132,11 +143,14 @@ export function buildReport(year: number): Report {
      JOIN allocations a ON a.transaction_id = t.id JOIN categories c ON c.id = a.category_id
      WHERE c.beleg_pflicht = 1 AND t.buchungsdatum BETWEEN ? AND ?
        AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.transaction_id = t.id)`,
-    [`${year}-01-01`, `${year}-12-31`],
+    [von, bis],
   )[0]?.n ?? 0;
 
   return {
     jahr: year,
+    von,
+    bis,
+    ganzesJahr: von === `${year}-01-01` && bis === `${year}-12-31`,
     bloecke,
     summeEin,
     summeAus,
@@ -156,7 +170,8 @@ export function buildReport(year: number): Report {
 
 export function reportToCSV(r: Report, vereinName: string): string {
   const eur = (c: number) => (c / 100).toFixed(2).replace('.', ',');
-  const lines: string[][] = [[`Gewinn- und Verlustrechnung ${r.jahr}`, vereinName], [], ['Konto', 'Bezeichnung', 'Bereich', `${r.jahr}`, `${r.jahr - 1}`]];
+  const zeitraum = r.ganzesJahr ? String(r.jahr) : `${r.von} bis ${r.bis}`;
+  const lines: string[][] = [[`Gewinn- und Verlustrechnung ${zeitraum}`, vereinName], [], ['Konto', 'Bezeichnung', 'Bereich', 'Zeitraum', 'Vorjahreszeitraum']];
   for (const b of r.bloecke) {
     if (!b.einnahmen.length && !b.ausgaben.length) continue;
     lines.push([], ['', b.name]);
@@ -164,7 +179,7 @@ export function reportToCSV(r: Report, vereinName: string): string {
     for (const l of b.ausgaben) lines.push([l.category.nummer, l.category.name, 'Ausgabe', eur(-l.summe), eur(-l.vorjahr)]);
     lines.push(['', `Ergebnis ${b.name}`, '', eur(b.ergebnis), eur(b.vorjahrEin - b.vorjahrAus)]);
   }
-  lines.push([], ['', 'Summe Einnahmen', '', eur(r.summeEin)], ['', 'Summe Ausgaben', '', eur(-r.summeAus)], ['', 'Jahresergebnis', '', eur(r.ergebnis), eur(r.vorjahrErgebnis)]);
+  lines.push([], ['', 'Summe Einnahmen', '', eur(r.summeEin)], ['', 'Summe Ausgaben', '', eur(-r.summeAus)], ['', r.ganzesJahr ? 'Jahresergebnis' : 'Ergebnis im Zeitraum', '', eur(r.ergebnis), eur(r.vorjahrErgebnis)]);
   if (r.neutral.length) {
     lines.push([], ['', 'Neutrale Buchungen']);
     for (const l of r.neutral) lines.push([l.category.nummer, l.category.name, 'neutral', eur(l.summe), eur(l.vorjahr)]);
@@ -173,7 +188,7 @@ export function reportToCSV(r: Report, vereinName: string): string {
   lines.push([], ['', 'Kontostände']);
   for (const k of r.konten) {
     lines.push(['', `${k.account.name} – Stand ${k.anfangDatum}`, '', k.anfang == null ? '' : eur(k.anfang)]);
-    lines.push(['', `${k.account.name} – Stand ${r.jahr}-12-31`, '', k.ende == null ? '' : eur(k.ende)]);
+    lines.push(['', `${k.account.name} – Stand ${r.bis}`, '', k.ende == null ? '' : eur(k.ende)]);
   }
   lines.push(['', 'Veränderung Kontostand', '', eur(r.kontoBewegung)]);
   return lines.map((l) => l.map(csvCell).join(';')).join('\r\n');
