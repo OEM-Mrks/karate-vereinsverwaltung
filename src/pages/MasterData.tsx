@@ -137,10 +137,12 @@ export function CategoriesPage() {
                   <td className="mono">{c.nummer}</td>
                   <td>{c.name}</td>
                   <td className="small">{SPHAEREN.find((s) => s.id === c.sphaere)?.name}</td>
-                  <td className="inline">
-                    {c.mitgliedskonto ? <Badge tone="info">Mitgliedskonto</Badge> : null}
-                    {c.beleg_pflicht ? <Badge>Beleg nötig</Badge> : null}
-                    {!c.aktiv && <Badge>inaktiv</Badge>}
+                  <td>
+                    <div className="inline">
+                      {c.mitgliedskonto ? <Badge tone="info">Mitgliedskonto</Badge> : null}
+                      {c.beleg_pflicht ? <Badge>Beleg nötig</Badge> : null}
+                      {!c.aktiv && <Badge>inaktiv</Badge>}
+                    </div>
                   </td>
                   <td className="num">{c.anzahl}</td>
                 </tr>

@@ -242,6 +242,8 @@ main { padding: 26px 32px 60px; max-width: 1400px; }
   padding: 9px 12px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0;
 }
 .table td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+/* Tabellenzellen bleiben Tabellenzellen, auch wenn eine Layout-Klasse (z. B. .inline) daran hängt */
+.table td, .table th { display: table-cell; }
 .table tbody tr:last-child td { border-bottom: none; }
 .table tfoot td { font-weight: 650; border-top: 2px solid var(--border); }
 .clickable-rows tbody tr { cursor: pointer; }
