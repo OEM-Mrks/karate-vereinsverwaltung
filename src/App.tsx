@@ -2,7 +2,8 @@ import { useRef, useState, useSyncExternalStore } from 'react';
 import { getSetting, hasDatabase } from './db/db';
 import { downloadBackup, getSaveState, openFile, startDemo, startNew, subscribeSave } from './db/session';
 import { useDbVersion, useLocalState, useRoute } from './hooks';
-import { Toaster, toast } from './components/ui';
+import { Modal, Toaster, toast } from './components/ui';
+import credits from '../CREDITS.md?raw';
 import { Dashboard } from './pages/Dashboard';
 import { MembersPage } from './pages/Members';
 import { MemberDetail } from './pages/MemberDetail';
@@ -99,6 +100,7 @@ export function App() {
 function Shell({ onWiped }: { onWiped: () => void }) {
   const route = useRoute();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [lizenzen, setLizenzen] = useState(false);
   const save = useSyncExternalStore(subscribeSave, getSaveState);
   const changes = Number(getSetting('changes_since_export', '0'));
   const page = route[0];
@@ -145,9 +147,16 @@ function Shell({ onWiped }: { onWiped: () => void }) {
             💾 Sichern{changes ? <span className="pill">{changes}</span> : null}
           </button>
           <div className="offline">🔒 Offline · keine Cloud</div>
-          <div className="app-meta">Version {__APP_VERSION__} · © oemedia.de</div>
+          <div className="app-meta">
+            Version {__APP_VERSION__} · © oemedia.de · <button className="link" onClick={(e) => { e.stopPropagation(); setLizenzen(true); }}>Lizenzen</button>
+          </div>
         </div>
       </aside>
+      {lizenzen && (
+        <Modal size="wide" title="Lizenzen verwendeter Software" onClose={() => setLizenzen(false)}>
+          <pre className="pre small">{credits}</pre>
+        </Modal>
+      )}
       <div className="main">
         <header className="topbar">
           <button className="icon-btn menu-btn" onClick={() => setMenuOpen(!menuOpen)} aria-label="Menü">☰</button>

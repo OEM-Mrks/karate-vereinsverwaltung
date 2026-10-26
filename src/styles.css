@@ -508,3 +508,4 @@ main { padding: 26px 32px 60px; max-width: 1400px; }
 
 /* Erkannter Text (OCR) im Dialog „Angaben aus dem Mitgliedsantrag“ */
 .ocr-text { max-height: 240px; overflow: auto; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
+.app-meta .link { font-size: inherit; color: inherit; text-decoration: underline; }
