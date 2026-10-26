@@ -114,7 +114,7 @@ npm run build    # erzeugt dist/index.html (eine einzige Datei, ~11 MB inkl. SQL
 ```
 
 Technik: React + TypeScript + Vite, SQLite über [sql.js](https://github.com/sql-js/sql.js) (WebAssembly), Texterkennung mit [Tesseract.js](https://github.com/naptha/tesseract.js) (WebAssembly), alles in eine HTML-Datei gebündelt.
-Aufbau und Datenmodell: [docs/KONZEPT.md](docs/KONZEPT.md).
+Aufbau und Datenmodell: [docs/KONZEPT.md](docs/KONZEPT.md). Verwendete Software anderer Anbieter und ihre Lizenzen: [CREDITS.md](CREDITS.md) (auch in der App unter „Lizenzen“).
 
 ## Hinweis
 
