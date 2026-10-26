@@ -23,6 +23,8 @@ Alle Namen und Zahlen im Video sind erfunden. Musik: „Wingspan“ von Blue Dot
 - Anlegen schon mit dem Namen allein; die Liste **„Unvollständig“** zeigt, wo noch Angaben fehlen (Pflichtangaben einstellbar), Ergänzen mit „Speichern & nächstes“
 - **Frühestes Kündigungsdatum**: heute + 3 Monate zum Monatsende (Frist einstellbar), z. B. Kündigung am 25.10.2026 → Austritt 31.01.2027
 - Kündigungsbestätigung als druckfertiger Brief
+- **Unterlagen je Mitglied** (Mitgliedsantrag, SEPA-Mandat, Kündigung …) als PDF, Scan oder Foto ablegen
+- **Mitgliedsantrag auslesen (OCR)**: Texterkennung direkt im Browser (Tesseract, deutsches Sprachmodell eingebettet) – erkennt u. a. Name, Geburtsdatum, Anschrift, Telefon/Handy, E-Mail, Erziehungsberechtigte, Eintritt, Kontoinhaber, IBAN (mit Prüfziffer) und BIC; die Vorschläge werden vor der Übernahme angezeigt und lassen sich korrigieren, vorhandene Angaben werden nur auf Wunsch überschrieben. **„+ Aus Mitgliedsantrag …“** legt ein neues Mitglied direkt aus dem Antrag an. Gedruckte bzw. am PC ausgefüllte Anträge werden gut erkannt, Handschrift kaum
 - **Mitgliederversammlung – Tagesordnung**: Checkliste mit Standardpunkten (Begrüßung, Beschlussfähigkeit, Berichte von Vorstand, Kassenwart und Kassenprüfern, Entlastung, Neuwahlen, Kassenprüferwahl, Mitgliedsbeiträge, Satzungsänderungen, Anträge, Verschiedenes …) zum Anhaken, eigene Punkte hinzufügen, Reihenfolge ändern, Erläuterungen; ablaufende Amtszeiten schlagen Neuwahlen vor. Daraus als PDF: **Einladung mit Tagesordnung** und **Protokollvorlage** mit Schreiblinien und Abstimmungsfeldern – die Protokollvorlage auch als **Word-Dokument (.docx)** zum direkten Ausfüllen am iPad/Laptop (Word, Pages); in der Protokollvorlage stehen beim Bericht des Kassenwarts und der Kassenprüfer schon die Eckdaten des Berichtsjahres (Kontostände 01.01./31.12., Einnahmen, Ausgaben, Ergebnis, Mitgliederzahlen, Beitragsstand, Ergebnis der Kassenprüfung) – nur als Statistik, ohne Namen; über welche Kassenprüfungen berichtet wird, ist wählbar (z. B. zwei Geschäftsjahre, wenn seit der letzten Versammlung zwei Prüfungen stattgefunden haben)
 - **Mitgliederversammlung – Anwesenheitsliste** aller am Versammlungstag aktiven Mitglieder als PDF (Name, Anschrift, Telefon, optional E-Mail, Minderjährige gekennzeichnet) mit Unterschriftsspalte, Leerzeilen für Gäste und Feldern für Anwesende/Stimmberechtigte
 
@@ -82,6 +84,7 @@ Alle Namen und Zahlen im Video sind erfunden. Musik: „Wingspan“ von Blue Dot
 
 - Die App ist eine einzelne HTML-Datei, die **ausschließlich im Browser** läuft. Es gibt keinen Server und keine Datenübertragung.
 - Eine Content-Security-Policy blockiert technisch jede Verbindung ins Internet (auch keine Schriften oder Skripte aus einem CDN).
+- Auch die Texterkennung (OCR) für Mitgliedsanträge läuft lokal: Programm und Sprachmodell sind in die Datei eingebettet, kein Dokument verlässt den Rechner.
 - Die Arbeitskopie liegt im Browser-Speicher (IndexedDB) des jeweiligen Geräts. Die Sicherung ist eine SQLite-Datei inklusive aller Belege.
 - Es dürfen niemals echte Vereinsdaten in dieses Repository eingecheckt werden (`.gitignore` schließt `*.sqlite` und `*.csv` aus).
 
@@ -106,11 +109,11 @@ Alle Namen und Zahlen im Video sind erfunden. Musik: „Wingspan“ von Blue Dot
 ```bash
 npm install
 npm run dev      # Entwicklungsserver
-npm test         # Tests (Beitragsberechnung, Kündigung, CSV-Import, Zuordnung, GuV)
-npm run build    # erzeugt dist/index.html (eine einzige Datei, ~1,3 MB inkl. SQLite)
+npm test         # Tests (Beitragsberechnung, Kündigung, CSV-Import, Zuordnung, GuV, Mitgliedsantrag)
+npm run build    # erzeugt dist/index.html (eine einzige Datei, ~11 MB inkl. SQLite, pdf.js und Texterkennung)
 ```
 
-Technik: React + TypeScript + Vite, SQLite über [sql.js](https://github.com/sql-js/sql.js) (WebAssembly), alles in eine HTML-Datei gebündelt.
+Technik: React + TypeScript + Vite, SQLite über [sql.js](https://github.com/sql-js/sql.js) (WebAssembly), Texterkennung mit [Tesseract.js](https://github.com/naptha/tesseract.js) (WebAssembly), alles in eine HTML-Datei gebündelt.
 Aufbau und Datenmodell: [docs/KONZEPT.md](docs/KONZEPT.md).
 
 ## Hinweis

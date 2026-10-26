@@ -1,6 +1,6 @@
 // Datenbankschema (SQLite). Alle Geldbeträge in Cent (INTEGER), alle Datumswerte als ISO-Text (yyyy-mm-dd).
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -225,6 +225,20 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 CREATE INDEX IF NOT EXISTS idx_docs_tx ON documents(transaction_id);
 
+-- Unterlagen je Mitglied (Mitgliedsantrag, SEPA-Mandat …) als BLOB; text = erkannter Text (OCR)
+CREATE TABLE IF NOT EXISTS member_documents (
+  id         INTEGER PRIMARY KEY,
+  member_id  INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  art        TEXT NOT NULL DEFAULT 'antrag',  -- antrag | sepa | kuendigung | sonstiges
+  dateiname  TEXT NOT NULL,
+  mime       TEXT NOT NULL,
+  groesse    INTEGER NOT NULL,
+  daten      BLOB NOT NULL,
+  text       TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_member_docs ON member_documents(member_id);
+
 -- Wiederkehrende Zahlungen (Verbandsbeiträge, Versicherungen …)
 CREATE TABLE IF NOT EXISTS recurring (
   id               INTEGER PRIMARY KEY,
@@ -422,6 +436,13 @@ export type AuditCheck = {
 export type DocumentMeta = {
   id: number; belegnr: string | null; belegdatum: string | null; beschreibung: string | null;
   transaction_id: number | null; partner_id: number | null; dateiname: string; mime: string; groesse: number; eigenbeleg: number; created_at: string;
+};
+
+export type MemberDocumentArt = 'antrag' | 'sepa' | 'kuendigung' | 'sonstiges';
+
+export type MemberDocumentMeta = {
+  id: number; member_id: number; art: MemberDocumentArt; dateiname: string; mime: string; groesse: number;
+  text: string | null; created_at: string;
 };
 
 export type Rhythmus = 'jaehrlich' | 'halbjaehrlich' | 'quartal' | 'monatlich';
