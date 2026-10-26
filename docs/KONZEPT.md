@@ -44,6 +44,7 @@ Browser
 | `allocations` | Zuordnung (Split) eines Umsatzes zu Kategorie / Mitglied / Partner, Beitragsjahr, Herkunft der Automatik |
 | `rules` | Zuordnungsregeln (IBAN, Textmuster, Richtung, Betragsbereich → Kategorie/Partner/Mitglied) |
 | `documents` | Belege als BLOB (PDF/Bild) mit Belegnummer, verknüpft mit Umsatz und Partner; Kennzeichen für Eigenbelege |
+| `member_documents` | Unterlagen je Mitglied (Mitgliedsantrag, SEPA-Mandat, Kündigung …) als BLOB, mit erkanntem Text (OCR) |
 | `recurring`, `recurring_amounts`, `recurring_payments` | Wiederkehrende Zahlungen, Betrag ab Jahr, abgehakte Fälligkeiten mit Buchung und Eigenbeleg |
 
 ## Fachlogik
@@ -59,6 +60,8 @@ Beitragskonten werden ab einem einstellbaren Jahr geführt, damit beim Umstieg k
 
 **Automatische Zuordnung (Reihenfolge):** Regeln mit Priorität < 500 → IBAN Mitglied (mehrere Mitglieder = Familie, Aufteilung nach Beitrag) → IBAN Partner → Mitgliedsnummer im Verwendungszweck → Vor- und Nachname im Text bzw. Kontoinhaber → Partnername → übrige Regeln (z. B. Kontoführung, Zinsen).
 
+**Mitgliedsantrag (OCR):** PDFs mit Textebene liest pdf.js direkt; gescannte PDFs werden mit ca. 300 dpi gerendert und wie Fotos mit Tesseract.js erkannt. Kern (WebAssembly, SIMD/LSTM), Worker und Sprachmodell `deu` (best_int) sind eingebettet; der Worker startet aus einer Blob-Datei (Kern + Worker-Skript zusammen, weil die CSP kein `importScripts` aus `blob:` erlaubt), das Sprachmodell kommt per vorgeschaltetem `fetch` aus einer `data:`-Adresse. pdf.js läuft als klassischer Worker, weil Modul-Worker unter `file://` nicht starten. Auswertung (`src/lib/antrag.ts`): Feldbezeichnungen typischer Formulare (längste Bezeichnung gewinnt, Wert rechts daneben oder in der Zeile darunter), dazu Muster ohne Bezeichnung (IBAN mit Prüfziffer und O/0-Korrektur, E-Mail, „12345 Ort“, Straße mit Hausnummer). Übernommen wird nur, was nach Durchsicht angehakt ist; vorausgewählt sind erkannte Werte für leere Felder.
+
 **Belegpflicht:** Erwartet wird je belegpflichtiger Zuordnungszeile ein Beleg. Fehlend = belegpflichtig, nicht als „Alle Belege erfasst“ markiert und weniger Belege als Zeilen.
 
 **Wiederkehrende Zahlungen:** Betrag je Fälligkeit aus dem letzten Eintrag „ab Jahr“ ≤ Jahr. Vorschlag einer Buchung: richtige Richtung, Buchungsdatum 4 Monate vor bis 7 Monate nach Fälligkeit, Partner per Zuordnung, IBAN oder Name, noch keiner Fälligkeit zugeordnet; exakter Betrag zuerst, dann Nähe zum Fälligkeitsmonat. Rhythmus beim Übernehmen aus einer Buchung: Median der Abstände gleichartiger Zahlungen (≤ 45 Tage monatlich, ≤ 120 vierteljährlich, ≤ 230 halbjährlich, sonst jährlich). Automatisches Abhaken nur bei exaktem Betrag und Nähe zum üblichen Zahltag (halber Rhythmus + 16 Tage).
@@ -67,4 +70,4 @@ Beitragskonten werden ab einem einstellbaren Jahr geführt, damit beim Umstieg k
 
 ## Tests
 
-`npm test` prüft Beträge/Datum/IBAN, Kündigungsdatum, Beitragsberechnung, CSV-Erkennung (Sparkasse CAMT/MT940, ING mit Vorspann, Soll/Haben), Duplikate, automatische Zuordnung, GuV-Abstimmung sowie Export/Import der Datenbank inkl. Belegen.
+`npm test` prüft Beträge/Datum/IBAN, Kündigungsdatum, Beitragsberechnung, CSV-Erkennung (Sparkasse CAMT/MT940, ING mit Vorspann, Soll/Haben), Duplikate, automatische Zuordnung, GuV-Abstimmung, Auslesen von Mitgliedsanträgen sowie Export/Import der Datenbank inkl. Belegen.

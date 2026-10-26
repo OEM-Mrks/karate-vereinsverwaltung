@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { all, getSetting, run, scalar, tx } from '../db/db';
 import type { Member, Zahlweise } from '../db/schema';
 import { GRADES, gradeName } from '../db/seed';
@@ -10,8 +10,10 @@ import { missingFields, requiredFields } from '../lib/completeness';
 import { nextMemberNo } from '../lib/setup';
 import { centToCsv, toCsv } from '../lib/print';
 import { downloadBlob } from '../db/storage';
+import { AntragDialog } from '../components/MemberDocs';
+import { ACCEPT_MEMBER_DOCS, addMemberDocument } from '../lib/memberDocs';
 import {
-  attempt, Badge, DateInput, Field, GradeBadge, Modal, MoneyInput, PageHeader, Select, TextArea, TextInput, YearSelect,
+  attempt, Badge, DateInput, Field, GradeBadge, Modal, MoneyInput, PageHeader, Select, TextArea, TextInput, toast, YearSelect,
 } from '../components/ui';
 
 type Filter = 'aktiv' | 'unvollstaendig' | 'gekuendigt' | 'ausgetreten' | 'alle';
@@ -22,6 +24,9 @@ export function MembersPage() {
   const [grad, setGrad] = useState<string | null>(null);
   const [year, setYear] = useLocalState('year', new Date().getFullYear());
   const [editing, setEditing] = useState<Partial<Member> | null>(null);
+  // Neues Mitglied aus einem Mitgliedsantrag: Datei → Texterkennung → Formular vorausgefüllt → Antrag wird mitgespeichert
+  const [antrag, setAntrag] = useState<{ file: File; text?: string; gelesen?: boolean } | null>(null);
+  const antragInput = useRef<HTMLInputElement>(null);
   const today = todayISO();
   const frist = Number(getSetting('kuendigungsfrist_monate', '3')) || 3;
 
@@ -72,6 +77,12 @@ export function MembersPage() {
         subtitle={<>Kündigung heute eingehend → frühester Austritt zum <strong>{formatDate(earliestExitDate(today, frist))}</strong> ({frist} Monate zum Monatsende)</>}
         actions={<>
           <button onClick={exportCsv}>CSV exportieren</button>
+          <button onClick={() => antragInput.current?.click()} title="Mitgliedsantrag (PDF/Scan/Foto) auswählen – Angaben werden per Texterkennung ausgelesen">+ Aus Mitgliedsantrag …</button>
+          <input ref={antragInput} type="file" accept={ACCEPT_MEMBER_DOCS} hidden onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f) setAntrag({ file: f });
+          }} />
           <button className="primary" onClick={() => setEditing({})}>+ Neues Mitglied</button>
         </>}
       />
@@ -158,12 +169,31 @@ export function MembersPage() {
         </table>
       </div>
       <p className="muted small">* Offen inklusive Rückstand/Guthaben aus Vorjahren. Gutschriften und Überzahlungen erscheinen negativ.</p>
+      {antrag && !antrag.gelesen && (
+        <AntragDialog
+          aktuell={{}}
+          quelle={{ file: antrag.file }}
+          applyLabel="Weiter zum Mitgliedsformular"
+          onClose={() => setAntrag(null)}
+          onApply={(daten, text) => {
+            setAntrag({ ...antrag, text, gelesen: true });
+            setEditing(daten as Partial<Member>);
+          }}
+        />
+      )}
       {editing && (
         <MemberForm
           key={editing.id ?? 'neu'}
           initial={editing}
-          onClose={() => setEditing(null)}
-          onSaved={filter === 'unvollstaendig' ? undefined : (id) => navigate(`mitglieder/${id}`)}
+          onClose={() => { setEditing(null); setAntrag(null); }}
+          onSaved={antrag ? async (id) => {
+            try {
+              await addMemberDocument(id, antrag.file, 'antrag', antrag.text ?? null);
+            } catch (e) {
+              toast(e instanceof Error ? e.message : String(e), 'bad');
+            }
+            navigate(`mitglieder/${id}`);
+          } : filter === 'unvollstaendig' ? undefined : (id) => navigate(`mitglieder/${id}`)}
           onNext={filter === 'unvollstaendig' && editing.id ? () => {
             const ids = visible.map((r) => r.m);
             const i = ids.findIndex((x) => x.id === editing.id);

@@ -16,11 +16,12 @@ export function DataPage({ onWiped }: { onWiped: () => void }) {
     beitragCat: Number(getSetting('beitrag_category_id')) || null,
     lastExport: getSetting('last_export_at'),
     changes: Number(getSetting('changes_since_export', '0')),
-    docs: scalar<number>('SELECT COALESCE(SUM(groesse),0) FROM documents') ?? 0,
+    docs: scalar<number>('SELECT (SELECT COALESCE(SUM(groesse),0) FROM documents) + (SELECT COALESCE(SUM(groesse),0) FROM member_documents)') ?? 0,
     counts: {
       Mitglieder: scalar<number>('SELECT COUNT(*) FROM members') ?? 0,
       Buchungen: scalar<number>('SELECT COUNT(*) FROM transactions') ?? 0,
       Belege: scalar<number>('SELECT COUNT(*) FROM documents') ?? 0,
+      Mitgliederunterlagen: scalar<number>('SELECT COUNT(*) FROM member_documents') ?? 0,
       Partner: scalar<number>('SELECT COUNT(*) FROM partners') ?? 0,
     },
   }));
@@ -72,7 +73,7 @@ export function DataPage({ onWiped }: { onWiped: () => void }) {
           </div>
           <ul className="small muted">
             {Object.entries(s.counts).map(([k, v]) => <li key={k}>{v} {k}</li>)}
-            <li>Belege gesamt: {formatSize(s.docs)}</li>
+            <li>Dateien gesamt (Belege und Mitgliederunterlagen): {formatSize(s.docs)}</li>
           </ul>
         </div>
         <div className="card">

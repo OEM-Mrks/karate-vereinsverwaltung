@@ -38,6 +38,8 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
+  // Sprachmodell der Texterkennung (OCR) wird als eingebettete Datei geladen
+  assetsInclude: ['**/*.traineddata.gz'],
   plugins: [react(), viteSingleFile(), cspPlugin()],
   test: {
     environment: 'node',

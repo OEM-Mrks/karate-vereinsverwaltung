@@ -13,8 +13,9 @@ import {
 } from '../components/ui';
 import { MemberForm } from './Members';
 import { missingFields } from '../lib/completeness';
+import { MemberDocuments } from '../components/MemberDocs';
 
-type Tab = 'stammdaten' | 'beitraege' | 'pruefungen';
+type Tab = 'stammdaten' | 'beitraege' | 'pruefungen' | 'unterlagen';
 
 export function MemberDetail({ id }: { id: number }) {
   const [tab, setTab] = useState<Tab>('beitraege');
@@ -22,6 +23,7 @@ export function MemberDetail({ id }: { id: number }) {
   const [kuendigung, setKuendigung] = useState(false);
   const [pdf, setPdf] = useState(false);
   const m = useQuery(() => get<Member>('SELECT * FROM members WHERE id = ?', [id]), [id]);
+  const unterlagen = useQuery(() => get<{ n: number }>('SELECT COUNT(*) AS n FROM member_documents WHERE member_id = ?', [id])?.n ?? 0, [id]);
   if (!m) return <div className="page"><Empty>Mitglied nicht gefunden. <a href="#/mitglieder">Zur Liste</a></Empty></div>;
   const today = todayISO();
   const active = isActive(m, today);
@@ -65,11 +67,13 @@ export function MemberDetail({ id }: { id: number }) {
           { id: 'beitraege', label: 'Beitragskonto' },
           { id: 'stammdaten', label: 'Stammdaten' },
           { id: 'pruefungen', label: 'Prüfungen' },
+          { id: 'unterlagen', label: <>Unterlagen{unterlagen > 0 && <> <Badge>{unterlagen}</Badge></>}</> },
         ]}
       />
       {tab === 'stammdaten' && <MasterData m={m} />}
       {tab === 'beitraege' && <FeeAccount m={m} />}
       {tab === 'pruefungen' && <Graduations m={m} />}
+      {tab === 'unterlagen' && <MemberDocuments m={m} />}
       {edit && <MemberForm initial={m} onClose={() => setEdit(false)} />}
       {kuendigung && <CancellationDialog m={m} onClose={() => setKuendigung(false)} />}
       {pdf && (
